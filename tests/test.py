@@ -1,3 +1,4 @@
+from datetime import datetime
 import os, sys
 import json, re, random
 from dotenv import load_dotenv
@@ -28,13 +29,30 @@ def save_json(url, items):
         json.dump(items, file)
 
 def test_embedder():
-    from src import embedders
-
-    embedder = embedders.from_path("avsolatorio/GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)
+    from src.embedders import TransformerEmbeddings, OVEmbeddings, ORTEmbeddings
+    
     data = load_json("./tests/texts-for-nlp.json")
-    inputs = [d['content'] for d in random.sample(data, 5)]       
-    vecs = embedder(inputs)
-    ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    input_texts = [d['content'] for d in data[:64]]   
+
+    xfemb = TransformerEmbeddings("avsolatorio/GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
+    ovemb = OVEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-ovquant", EMBEDDER_CONTEXT_LEN)
+    ortemb = ORTEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-onnx", EMBEDDER_CONTEXT_LEN)
+    ic(len(input_texts))
+    start = datetime.now()  
+    vecs = xfemb(input_texts)
+    # ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    ic(datetime.now() - start)    
+    
+    start = datetime.now()  
+    vecs = ovemb(input_texts)
+    # ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    ic(datetime.now() - start)  
+
+    # start = datetime.now()  
+    # vecs = ortemb(input_texts)
+    # # ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    # ic(datetime.now() - start)  
+
 
 # @log_runtime(logger=logger)
 def test_digestor():
@@ -133,6 +151,26 @@ def run_deterministic_reject():
         failed, why = contentfilter.should_reject_input(bean["text"])
         if failed:
             print(bean['_id'], why)
+
+
+def test_embedder_performance(xformer_path: str, llama_cpp_path: str, data):
+    from sentence_transformers import SentenceTransformer
+    from llama_cpp import Llama
+
+    xformer = SentenceTransformer(xformer_path, cache_folder=".models", backend="onnx", model_kwargs={"file_name": "model_quantized.onnx"}, tokenizer_kwargs={"truncation": True, "max_length": 512}, trust_remote_code=True)
+    llamamodel = Llama(model_path=llama_cpp_path, n_ctx=512, embedding=True, verbose=False)
+
+    start = datetime.now()
+    vecs = xformer.encode(data, batch_size=os.cpu_count(), convert_to_numpy=False, convert_to_tensor=False)
+    vecs = [v.tolist() for v in vecs]
+    ic(datetime.now() - start)    
+
+    start = datetime.now()
+    result = llamamodel.create_embedding(data)
+    vecs2 = [data['embedding'] for data in result['data']]
+    ic(datetime.now() - start)
+
+    # [ic(v1[0] - v2[0]) for v1, v2 in zip(vecs, vecs2)]
 
 
 

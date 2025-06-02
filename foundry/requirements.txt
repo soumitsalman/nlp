@@ -1,5 +1,7 @@
 optimum[intel] 
 optimum[onnxruntime]
+optimum[openvino]
+nncf
 openvino 
 onnxruntime
 onnx

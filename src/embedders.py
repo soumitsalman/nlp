@@ -34,7 +34,7 @@ class Embeddings(ABC):
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
         texts = texts if isinstance(texts, list) else [texts]
         
-        chunks = batch_run(self._split, texts)
+        chunks = list(map(self._split, texts)) # NOTE: batch running will mess this up
         counts = list(map(len, chunks))
         start_idx = [0]*len(chunks)
         for i in range(1,len(counts)):
@@ -122,7 +122,50 @@ class TransformerEmbeddings(Embeddings):
     def _embed(self, texts: str|list[str]):
         return self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
     
+class OVEmbeddings(Embeddings):
+    model = None
+    tokenizer = None
+    context_len = None
+
+    def __init__(self, model_path: str, context_len: int):
+        from optimum.intel.openvino import OVModelForFeatureExtraction
+        from transformers import AutoTokenizer
+
+        super().__init__(context_len)        
+        self.model = OVModelForFeatureExtraction.from_pretrained(model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.context_len = context_len
+
+    def _embed(self, texts: str|list[str]):
+        import torch
+        input_tokens = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.context_len)
+        with torch.no_grad():
+            output_tokens = self.model(**input_tokens)
+            vecs = output_tokens.last_hidden_state.mean(dim=1)
+        return vecs
     
+class ORTEmbeddings(Embeddings):
+    model = None
+    tokenizer = None
+    context_len = None
+
+    def __init__(self, model_path: str, context_len: int):
+        from optimum.onnxruntime import ORTModelForFeatureExtraction
+        from transformers import AutoTokenizer
+
+        super().__init__(context_len)        
+        self.model = ORTModelForFeatureExtraction.from_pretrained(model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.context_len = context_len
+
+    def _embed(self, texts: str|list[str]):
+        import torch
+        input_tokens = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.context_len)
+        with torch.no_grad():
+            output_tokens = self.model(**input_tokens)
+            vecs = output_tokens.last_hidden_state.mean(dim=1)   
+        return vecs
+
 def from_path(
     embedder_path: str, 
     context_len: int = 512,

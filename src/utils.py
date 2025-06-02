@@ -5,7 +5,9 @@ import math
 from typing import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-LLAMA_CPP_PREFIX = "llama-cpp://"
+LLAMA_CPP_PREFIX = "llamacpp://"
+ONNX_PREFIX = "onnx://"
+OPENVINO_PREFIX = "openvino://"
 API_URL_PREFIX = "https://"
 NUM_THREADS = os.cpu_count()
 

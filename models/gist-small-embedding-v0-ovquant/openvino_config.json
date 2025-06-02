@@ -1,0 +1,27 @@
+{
+  "dtype": null,
+  "input_info": null,
+  "optimum_version": "1.25.3",
+  "quantization_config": {
+    "all_layers": null,
+    "backup_precision": null,
+    "bits": 8,
+    "dataset": null,
+    "dtype": "int8",
+    "gptq": null,
+    "group_size": -1,
+    "ignored_scope": null,
+    "lora_correction": null,
+    "num_samples": null,
+    "processor": null,
+    "quant_method": "default",
+    "ratio": 1.0,
+    "scale_estimation": null,
+    "sensitivity_metric": null,
+    "sym": false,
+    "tokenizer": null,
+    "trust_remote_code": false
+  },
+  "save_onnx_model": false,
+  "transformers_version": "4.51.3"
+}
