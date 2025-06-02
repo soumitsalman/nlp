@@ -1,0 +1,7 @@
+sentence-transformers
+openai
+llama-index
+tiktoken
+numpy
+retry
+icecream

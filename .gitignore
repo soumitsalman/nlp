@@ -1,0 +1,10 @@
+__pycache__
+.venv
+.models
+.test
+.vscode
+*.env
+*.log
+flagged
+unsloth*
+DEPRECATE*

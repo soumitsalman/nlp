@@ -1,0 +1,9 @@
+llama-cpp-python
+sentence-transformers
+transformers
+openai
+llama-index
+tiktoken
+numpy
+retry
+icecream
