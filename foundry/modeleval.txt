@@ -1,0 +1,48 @@
+# SUMMARY MODELS EVALUATION
+# "mistralai/Mistral-Small-24B-Instruct-2501" -->   NOPE
+#   not bad so far
+#   bit too verbose
+#   does not maintain the original text's tone and style
+
+# mistralai/Mistral-Nemo-Instruct-2407 --> NOPE
+#   does not translate
+#   way too verbose
+
+# microsoft/Phi-4-multimodal-instruct --> NOPE
+#   created a whole bunch of garbage
+
+# Qwen/Qwen2.5-7B-Instruct --> NOPE
+#   does not translate
+#   size is write
+
+# google/gemini-1.5-flash --> NOPE
+#   size is fine
+#   translates well
+#   does not do bullet points
+#   does not maintain the tone
+
+# google/gemma-3-27b-it --> GOOD | $0.10
+#   size is fine
+#   translates well
+#   uses bullet points
+#   not worth the price
+
+# meta-llama/Meta-Llama-3-8B-Instruct --> GOOD | $0.03
+#   includes blanket text
+#   uses bullet points
+#   size is fine
+
+# meta-llama/Llama-3.2-3B-Instruct --> NOPE
+#   way too verbose
+
+# meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo --> NOPE
+#   way too verbose'
+
+# "meta-llama/Llama-4-Scout-17B-16E-Instruct" --> Very GOOD | $0.10
+
+# 'nvidia/Llama-3.1-Nemotron-70B-Instruct' --> Very GOOD | $0.12
+
+# 'Gryphe/MythoMax-L2-13b' --> Trash | $0.065
+
+# 'NovaSky-AI/Sky-T1-32B-Preview' --> GOOD | $0.12
+

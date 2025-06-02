@@ -1,0 +1,8 @@
+optimum[intel] 
+optimum[onnxruntime]
+openvino 
+onnxruntime
+onnx
+transformers
+azure-storage-blob
+pymongo

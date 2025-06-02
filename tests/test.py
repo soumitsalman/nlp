@@ -56,7 +56,7 @@ def test_digestor():
     [ic(r) for r in responses]
 
 def test_digest_parser():
-    from models import Digest
+    from src.models import Digest
     responses = [
         "P:AI model training acceleration|Data compression advancements|AIOps framework rollout|Channel sales leadership change|Real-time AI data store|Storage system upgrade|Log data infrastructure replacement|CMO appointment|Sales leadership expansion|File collaboration VP appointment|CRO appointment|RAID integration for AI;E:Alluxio introduces Cache Only Write Mode|Atombeam raises $20M in A+ funding|CloudFabrix rebrands to Fabrix.ai|DDN appoints Wendy Stusrud|GridGain launches GridGain for AI|Hitachi Vantara wins pharmaceutical customer|Hydrolix ships Spark connector for Databricks|MinIO appoints Erik Frieberg|Quobyte expands to New York|Resilio appoints Eric Soffin|Scality appoints Emilio Roman|Xinnor wins customer with BeeGFS integration;D:Atombeam funding: $35M total|$84 patents issued to Atombeam|115 patents pending for Atombeam|HP overlap: Riahi & Ignomirello - 4 years|Read speeds: 29.2 GBps|Write speeds: 25.8 GBps;R:Financial sector (Quobyte expansion);N:Alluxio|Atombeam|CloudFabrix/Fabrix.ai|DDN|GridGain|Hitachi Vantara|Hydrolix|MinIO|Quobyte|Resilio|Scality|Xinnor|Asghar Riahi|Brian Ignomirello|Wendy Stusrud|Erik Frieberg|Emilio Roman|Peter Brennan;C:AI|Storage|Data Management|Cloud Computing|AIOps;S:neutral",
 
@@ -123,6 +123,18 @@ def test_digest_parser():
         "P:Trump invites influencers to briefings|Broadening media access is a good idea in principle|Concerns about repeating past briefing practices|Potential to undermine public trust in journalism|Polarization of media expected to increase|Legal threats to journalists may increase|Rise of partisan influencers with dangerous language;E:Karoline Leavitt announces new briefing policy|White House received 7,400 accreditation applications|Trump favored friendly media (Fox News) in first term|Breitbart & Axios selected for first questions|Acosta leaves CNN;D:7400 applications received|2017-2021: Trump's first term|January 28: Acosta's final CNN broadcast;R:United States|White House;N:Donald Trump|Karoline Leavitt|Elon Musk|Tucker Carlson|Jim Acosta|George Stephanopoulos|Taylor Lorenz|Ken Klippenstein|Mark Zuckerberg|Steven Buckley;C:Politics|Media|Journalism|Misinformation|Social Media;S:negative|concerned|critical"
     ]
     [ic(Digest.parse_compressed(resp)) for resp in responses]
+
+def run_deterministic_reject():
+    from foundry import utils
+    from src import contentfilter
+    beans = utils.load_data_from_directory("raw_data/raw*.json")
+    rejected = []
+    for bean in beans:
+        failed, why = contentfilter.should_reject_input(bean["text"])
+        if failed:
+            print(bean['_id'], why)
+
+
 
 if __name__ == "__main__":
     test_embedder()
