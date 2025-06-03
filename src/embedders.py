@@ -173,12 +173,12 @@ def from_path(
     api_key: str = None
 ) -> Embeddings:
     # initialize digestor
-    if embedder_path.startswith(LLAMA_CPP_PREFIX):
-        return LlamaCppEmbeddings(embedder_path.removeprefix(LLAMA_CPP_PREFIX), context_len)
-    elif base_url:
-        return RemoteEmbeddings(embedder_path, base_url, api_key, context_len)
-    else:
-        return TransformerEmbeddings(embedder_path, context_len)
+    if base_url: return RemoteEmbeddings(embedder_path, base_url, api_key, context_len)
+    if embedder_path.startswith(LLAMACPP_PREFIX): return LlamaCppEmbeddings(embedder_path.removeprefix(LLAMACPP_PREFIX), context_len)
+    if embedder_path.startswith(OPENVINO_PREFIX): return OVEmbeddings(embedder_path.removeprefix(OPENVINO_PREFIX), context_len)
+    if embedder_path.startswith(ONNX_PREFIX): return ORTEmbeddings(embedder_path.removeprefix(ONNX_PREFIX), context_len)
+    return TransformerEmbeddings(embedder_path, context_len)
+
     
 
 

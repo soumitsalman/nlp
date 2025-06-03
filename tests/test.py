@@ -38,6 +38,7 @@ def test_embedder():
     ovemb = OVEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-ovquant", EMBEDDER_CONTEXT_LEN)
     ortemb = ORTEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-onnx", EMBEDDER_CONTEXT_LEN)
     ic(len(input_texts))
+    
     start = datetime.now()  
     vecs = xfemb(input_texts)
     # ic([(vec[:2]+vec[-1:]) for vec in vecs])
@@ -48,10 +49,10 @@ def test_embedder():
     # ic([(vec[:2]+vec[-1:]) for vec in vecs])
     ic(datetime.now() - start)  
 
-    # start = datetime.now()  
-    # vecs = ortemb(input_texts)
-    # # ic([(vec[:2]+vec[-1:]) for vec in vecs])
-    # ic(datetime.now() - start)  
+    start = datetime.now()  
+    vecs = ortemb(input_texts)
+    # ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    ic(datetime.now() - start)  
 
 
 # @log_runtime(logger=logger)

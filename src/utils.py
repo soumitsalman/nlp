@@ -5,7 +5,7 @@ import math
 from typing import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-LLAMA_CPP_PREFIX = "llamacpp://"
+LLAMACPP_PREFIX = "llamacpp://"
 ONNX_PREFIX = "onnx://"
 OPENVINO_PREFIX = "openvino://"
 API_URL_PREFIX = "https://"

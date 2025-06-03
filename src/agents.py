@@ -190,7 +190,7 @@ def from_path(
 ) -> SimpleAgent:
     
     if base_url: client = RemoteClient(model_path, base_url, api_key, max_output_tokens, temperature, json_mode)
-    elif model_path.startswith(LLAMA_CPP_PREFIX): raise NotImplementedError("LlamaCpp client not implemented yet")
+    elif model_path.startswith(LLAMACPP_PREFIX): raise NotImplementedError("LlamaCpp client not implemented yet")
     else: client = TransformerClient(model_path, max_output_tokens, temperature, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
     
     return SimpleAgent(client, max_input_tokens, system_prompt, output_parser)
