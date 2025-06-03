@@ -11,15 +11,13 @@ from .utils import *
 
 logger = logging.getLogger(__name__)
 
-# CONTEXT_LEN = 512
-# MAX_CHUNKS = 4 # this is an approximation assuming that getting 4 (max) chunks are good enough gauge for generating embedding
 
 class Embeddings(ABC):
     splitter: SentenceSplitter = None
 
     def __init__(self, context_len: int):
         self.splitter = SentenceSplitter.from_defaults(
-            chunk_size=context_len-16, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
+            chunk_size=context_len-32, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
             chunk_overlap=0, 
             paragraph_separator="\n", 
             include_metadata=False, 
@@ -42,7 +40,7 @@ class Embeddings(ABC):
         return list(chain(*chunks)), start_idx, counts
     
     def _merge_chunks(self, embeddings, start_idx: list[int], counts: list[int]):
-        merged_embeddings = lambda start, count: np.median(embeddings[start:start+count], axis=0).tolist()
+        merged_embeddings = lambda start, count: np.mean(embeddings[start:start+count], axis=0).tolist()
         with ThreadPoolExecutor(max_workers=os.cpu_count(), thread_name_prefix="merge_chunks") as exec:
             embeddings = list(exec.map(merged_embeddings, start_idx, counts))
         return embeddings
