@@ -115,7 +115,7 @@ class TransformerEmbeddings(Embeddings):
             "max_length": context_len,
             "padding": True
         }
-        self.model = SentenceTransformer(model_path, device=os.getenv('NLP_DEVICE', 'auto'), trust_remote_code=True, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs)
+        self.model = SentenceTransformer(model_path, device=os.getenv('NLP_DEVICE'), trust_remote_code=True, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs)
 
     def _embed(self, texts: str|list[str]):
         with torch.no_grad():
