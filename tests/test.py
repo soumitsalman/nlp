@@ -65,7 +65,7 @@ def test_digestor():
         os.getenv("DIGESTOR_API_KEY"),
         max_input_tokens=DIGESTOR_CONTEXT_LEN,
         max_output_tokens=512,
-        system_prompt=prompts.DIGESTOR_SYSTEM_PROMPT,
+        system_prompt=prompts.DIGEST_SYSTEM_PROMPT,
         output_parser=models.Digest.parse_compressed,
         temperature=0.3,
         json_mode=False

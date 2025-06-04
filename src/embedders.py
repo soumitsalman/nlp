@@ -8,9 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from retry import retry
 from .utils import *
+import torch
 
 logger = logging.getLogger(__name__)
-
 
 class Embeddings(ABC):
     splitter: SentenceSplitter = None
@@ -115,10 +115,12 @@ class TransformerEmbeddings(Embeddings):
             "max_length": context_len,
             "padding": True
         }
-        self.model = SentenceTransformer(model_path, trust_remote_code=True, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs)
+        self.model = SentenceTransformer(model_path, device=os.getenv('NLP_DEVICE', 'auto'), trust_remote_code=True, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs)
 
     def _embed(self, texts: str|list[str]):
-        return self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+        with torch.no_grad():
+            embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+        return embs
     
 class OVEmbeddings(Embeddings):
     model = None
@@ -135,7 +137,6 @@ class OVEmbeddings(Embeddings):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
-        import torch
         input_tokens = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad():
             output_tokens = self.model(**input_tokens)
@@ -157,7 +158,6 @@ class ORTEmbeddings(Embeddings):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
-        import torch
         input_tokens = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad():
             output_tokens = self.model(**input_tokens)

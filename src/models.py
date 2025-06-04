@@ -113,10 +113,12 @@ class Digest(BaseModel):
 
         return digest
 
+M_TITLE_PREFIX = ["Topic:", "Topics:", "Intelligence Briefing:", "News Recap:"]
 M_INTRODUCTION = ["# Introduction", "## Introduction"]
 M_ANALYSIS = ["## Analysis"]
 M_TAKEAWAYS = ["## Key Datapoints", "## Key Takeaways", "## Key Trends & Insights"]
 M_VERDICT = ["## Verdict", "## Conclusion"]
+M_PREDICTION = ["## Prediction"]
 M_KEYWORDS = ["## Keywords"]
 class GeneratedArticle(BaseModel):
     raw: str
@@ -125,6 +127,7 @@ class GeneratedArticle(BaseModel):
     analysis: list[str] = Field(default=[])
     insights: list[str] = Field(default=[])
     verdict: list[str] = Field(default=[])
+    predictions: list[str] = Field(default=[])
     keywords: Optional[list[str]] = None
 
     def parse_markdown(text: str):
@@ -132,7 +135,9 @@ class GeneratedArticle(BaseModel):
         response = GeneratedArticle(raw=text)
         
         lines = text.splitlines()
-        response.title = remove_before(lines[0].removeprefix("##").removeprefix("#"), "Title:").strip()
+
+        response.title = lines[0].removeprefix("# ").removeprefix("## ")
+        response.title = response.title.removeprefix(next((prefix for prefix in M_TITLE_PREFIX if response.title.startswith(prefix)), "")).strip()
         add_to = None
         for line in lines[1:]:
             line = line.strip()
@@ -141,13 +146,17 @@ class GeneratedArticle(BaseModel):
             elif line in M_ANALYSIS: add_to = M_ANALYSIS
             elif line in M_TAKEAWAYS: add_to = M_TAKEAWAYS
             elif line in M_VERDICT: add_to = M_VERDICT
+            elif line in M_PREDICTION: add_to = M_PREDICTION
             elif line in M_KEYWORDS: add_to = M_KEYWORDS
+            else: 
+                line = re.sub(r"(#+ )(.*?)(\n|$)", _replace_header_tag, line)
 
-            elif add_to == M_INTRODUCTION: response.intro.append(line)
-            elif add_to == M_ANALYSIS: response.analysis.append(line)
-            elif add_to == M_TAKEAWAYS: response.insights.append(line)
-            elif add_to == M_VERDICT: response.verdict.append(line)
-            elif add_to == M_KEYWORDS: response.keywords = [kw.strip().removesuffix('.') for kw in line.split(',')]
+                if add_to == M_INTRODUCTION: response.intro.append(line)
+                elif add_to == M_ANALYSIS: response.analysis.append(line)
+                elif add_to == M_TAKEAWAYS: response.insights.append(line)
+                elif add_to == M_VERDICT: response.verdict.append(line)
+                elif add_to == M_PREDICTION: response.predictions.append(line)
+                elif add_to == M_KEYWORDS: response.keywords = [kw.strip().removesuffix('.') for kw in line.split(',')]
 
         return response   
 
@@ -180,7 +189,7 @@ class GeneratedArticle(BaseModel):
 
 #     return text.strip()
 
-# def replace_header_tag(match):
-#     header_content = match.group(2).strip()  # The content after "# " or "## "
-#     newline = match.group(3)  # Preserve the newline or end of string
-#     return f"\n**{header_content}**{newline}"
+def _replace_header_tag(match):
+    header_content = match.group(2).strip()  # The content after "# " or "## "
+    newline = match.group(3)  # Preserve the newline or end of string
+    return f"\n**{header_content}**{newline}"
