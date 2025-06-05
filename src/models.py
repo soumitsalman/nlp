@@ -156,7 +156,7 @@ class GeneratedArticle(BaseModel):
                 elif add_to == M_TAKEAWAYS: response.insights.append(line)
                 elif add_to == M_VERDICT: response.verdict.append(line)
                 elif add_to == M_PREDICTION: response.predictions.append(line)
-                elif add_to == M_KEYWORDS: response.keywords = [kw.strip().removesuffix('.') for kw in line.split(',')]
+                elif add_to == M_KEYWORDS: response.keywords = [kw.strip().removesuffix('.') for kw in line.split(',') if len(kw)<=30]
 
         return response   
 
