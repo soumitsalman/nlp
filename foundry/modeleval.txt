@@ -46,3 +46,10 @@
 
 # 'NovaSky-AI/Sky-T1-32B-Preview' --> GOOD | $0.12
 
+"NovaSky-AI/Sky-T1-32B-Preview --> UNDERWHELMING for article generation
+"deepseek-ai/DeepSeek-R1" --> good for article generation
+deepseek-ai/DeepSeek-R1-0528 --> good for article generation
+gpt-4.1-nano or mini --> BAD for content generation
+microsoft/WizardLM-2-8x22B --> good for article generation
+"Sao10K/L3.1-70B-Euryale-v2.2" --> good for article generation
+nvidia/Llama-3.1-Nemotron-70B-Instruct --> BAD for instruction following in article generation

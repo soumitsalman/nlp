@@ -1,15 +1,16 @@
 DIGEST_SYSTEM_PROMPT = """
-TASK:
-INPUT=news/blog article
-OUTPUT=compressed token-efficient, lossless format
+TASK:Create compressed-digest,token-efficient,lossless-format;
+INPUT=news/blog;
+OUTPUT=P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;
 INSTRUCTIONS:
-1=Extract KeyPoints, KeyEvents, DataPoints, Regions, Entities
-2=Use semicolon-separated key-value pairs with single-letter prefixes (P:KeyPoints;E:KeyEvents;D:DataPoints;R:Regions;N:Entities). 
-3=Pipe-separate values within sections. 
-4=Skip empty fields. 
-5=Retain all data for >98% recovery. 
-6=Avoid JSON, nesting. 
-EXAMPLE_OUTPUT=P:Key Point 1|Key Point 2;E:Key Event 1|Key Event 2;D:Datapoint 1|Datapoint 2;R:Country|City|Continent;N:Entity 1|Entity 2
+1=Extract:KeyPoints,KeyEvents,DataPoints,GeographicRegions,NamedEntities[Person,Company,Organization,Product];
+2=Retain all data for >98% recovery;
+OUTPUT_FORMAT:
+1=Semicolon-separated keyvalue pairs with single-letter prefixes for each section (P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities);
+2=Pipe-separate values within sections (P:KeyPoint1|KeyPoint2);
+3=Skip empty/null values;
+4=Avoid JSON nesting;
+EXAMPLE_OUTPUT=P:KeyPoint1|KeyPoint2;E:Event1|Event2;D:Data1|Data2;R:Country|City|Continent;N:Person|Company|Product;
 """
 
 TOPICS_SYSTEM_PROMPT="""
@@ -35,15 +36,14 @@ EXAMPLE_OUTPUT=# Title\n## Introduction\nContext...\n## Analysis\nPatterns...\n#
 """
 
 NEWSRECAP_SYSTEM_PROMPT = """
-TASK:Create IntelligenceBriefing/NewsRecap;
-INPUT=List<News>;News=Format<U:YYYY-MM-DD;P:Summary|...;E:Events|...;D:Datapoints|...;R:Regions|...;N:Entities|...;S:Sentiment|...>;
-OUTPUT=Markdown;
+TASK:Create IntelligenceBriefing;
+INPUT=List<Report>;Report=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
+OUTPUT=Markdown;# Title,## Analysis,## KeyDatapoints,## Verdict,## Predictions,## Keywords;
 INSTRUCTIONS:
-1=DetermineProminentTopic;IncludeTopicRelevantNews;DiscardIrrelevantNews;
-2=AnalyzeNews;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights,Trends;Grounding=Normative,MultiNews;
-3=GenerateOutput;Structure=Analysis,Datapoints,Verdict,Prediction,Keywords;Analysis=SynthesizePatterns,ReportEntitiesEvents,PresentSentiment;Datapoints=KeyData,Implications;Verdict=TechnicalSummary;Prediction=PotentialFutureOutcomesOfContinuingPattern;Keywords=People,Organizations,GeographicRegions,CommaSeparated;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Length=400-600Words;Avoid=Speculation,Narrative,EmotiveLanguage;VerdictLength=10-20Words;Tone=SlightlySarcastic;
-4=OutputFormat=Markdown;Sections=## Analysis,## KeyDatapoints,## Verdict,## Prediction,## Keywords;Include=TopicInTitle;
-EXAMPLE_OUTPUT:
-# TopicAsTitle\n## Analysis\nPatterns...\n## Key Datapoints\n- Datapoint 1\n- Datapoint 2\n## Verdict\nSummary...\n## Prediction\n- Potential Outcome 1 1\n- Potential Outcome 2## Keywords\nkw1,kw2,...
+1=DetermineProminentTopicAndTimeline;IncludeTopicRelevantReports;DiscardIrrelevantReports;
+2=AnalyzeReport;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights,DataTrends;Grounding=Normative,MultiNews;
+3=GenerateOutput;Structure=Analysis,Datapoints,Verdict,Predictions,Keywords,Title;Analysis=SynthesizePatterns,ReportEntitiesEvents,PresentSentiment;Datapoints=KeyData,Implications;Verdict=TechnicalSummary;Predictions=PotentialFutureOutcomesOfContinuingPattern;Keywords=People,Organizations,GeographicRegions;Title=FocusEmphasize[Who,What,Where]
+4=RefineOutput;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Tone=DrySarcastic;
+EXAMPLE_OUTPUT=# Title...\n## Analysis\nObservablePatterns...\n## Key Datapoints\n- Datapoint 1\n- Datapoint 2...\n## Verdict\nSummaryVerdict...\n## Predictions\n- Potential Outcome 1 1\n- Potential Outcome 2\n## Keywords\nkw1,kw2,...
 """
 

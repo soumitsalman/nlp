@@ -113,12 +113,14 @@ class Digest(BaseModel):
 
         return digest
 
+_THSTART = "<think>"
+_THEND = "</think>"
 M_TITLE_PREFIX = ["Topic:", "Topics:", "Intelligence Briefing:", "News Recap:"]
 M_INTRODUCTION = ["# Introduction", "## Introduction"]
 M_ANALYSIS = ["## Analysis"]
 M_TAKEAWAYS = ["## Key Datapoints", "## Key Takeaways", "## Key Trends & Insights"]
 M_VERDICT = ["## Verdict", "## Conclusion"]
-M_PREDICTION = ["## Prediction"]
+M_PREDICTION = ["## Prediction", "## Predictions"]
 M_KEYWORDS = ["## Keywords"]
 class GeneratedArticle(BaseModel):
     raw: str
@@ -131,9 +133,11 @@ class GeneratedArticle(BaseModel):
     keywords: Optional[list[str]] = None
 
     def parse_markdown(text: str):
-        text = text.strip().removeprefix(M_START).removesuffix(M_END).strip()
+        text = text.strip()
+        text = remove_before(text, _THEND).strip()
+        text = text.removeprefix(M_START).removesuffix(M_END).strip()
+
         response = GeneratedArticle(raw=text)
-        
         lines = text.splitlines()
 
         response.title = lines[0].removeprefix("# ").removeprefix("## ")
