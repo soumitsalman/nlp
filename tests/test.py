@@ -143,7 +143,7 @@ def test_digest_parser():
     ]
     [ic(Digest.parse_compressed(resp)) for resp in responses]
 
-def run_deterministic_reject():
+def test_deterministic_reject():
     from foundry import utils
     from src import contentfilter
     beans = utils.load_data_from_directory("raw_data/raw*.json")
@@ -154,29 +154,45 @@ def run_deterministic_reject():
             print(bean['_id'], why)
 
 
-def test_embedder_performance(xformer_path: str, llama_cpp_path: str, data):
-    from sentence_transformers import SentenceTransformer
-    from llama_cpp import Llama
+def test_article_parser():
+    text = """
+# React & Next.js: Modern Web Development Paradigms  
 
-    xformer = SentenceTransformer(xformer_path, cache_folder=".models", backend="onnx", model_kwargs={"file_name": "model_quantized.onnx"}, tokenizer_kwargs={"truncation": True, "max_length": 512}, trust_remote_code=True)
-    llamamodel = Llama(model_path=llama_cpp_path, n_ctx=512, embedding=True, verbose=False)
+## Analysis  
+Recent technical reports highlight a concentrated push toward optimizing React/Next.js ecosystems, emphasizing **state management**, **performance enhancements**, and **component modularity**. Key patterns include:  
 
-    start = datetime.now()
-    vecs = xformer.encode(data, batch_size=os.cpu_count(), convert_to_numpy=False, convert_to_tensor=False)
-    vecs = [v.tolist() for v in vecs]
-    ic(datetime.now() - start)    
+1. **State Management Evolution**: Adoption of `useReducer`, Redux Toolkit, and SOLID principles to replace scattered `useState` logic, reducing re-renders by 30-40% in complex apps.  
+2. **Image Optimization Surge**: Next.js 15’s `next/image` dominates discussions, with techniques like dominant color placeholders and GPU-accelerated processing (glfx.js) cutting LCP times by 50%.  
+3. **Custom Hooks Proliferation**: 25+ optimization strategies leverage hooks like `useFetch` and `useWindowSize` to decouple logic from UI, aligning with FP/currying patterns for testability.  
+4. **WebAssembly Integration**: Emerging use cases in image vectorization (Three.js) and real-time filters demonstrate a shift toward client-side GPU workloads, bypassing traditional REST bottlenecks.  
 
-    start = datetime.now()
-    result = llamamodel.create_embedding(data)
-    vecs2 = [data['embedding'] for data in result['data']]
-    ic(datetime.now() - start)
+## Key Datapoints  
+- React 19’s compiler automates memoization, doubling rendering speeds in benchmarks.  
+- Next.js 15 reduces SSG hydration mismatches by 60% via enhanced `hydrateRoot` API.  
+- `sharp` library processes 10,000+ images/sec in Node.js batch operations (v0.33.x).  
+- Redux Toolkit cuts boilerplate by 70% compared to legacy Redux implementations.  
 
-    # [ic(v1[0] - v2[0]) for v1, v2 in zip(vecs, vecs2)]
+## Verdict  
+Modern web stacks prioritize **deterministic state flow** and **GPU-driven rendering**, with React/Next.js acting as catalysts. The industry is deprecating useEffect-heavy architectures in favor of compiler-optimized derivations (useMemo) and WebAssembly pipelines, signaling a maturation phase for SPAs.  
 
+## Predictions  
+- **Widespread React 19 Adoption**: Automatic reactivity tuning will marginalize manual memoization by 2026.  
+- **Rise of Edge-AI Components**: On-device models (e.g., DeepSeek R-1) will integrate with useReducer for real-time UI personalization.  
+- **CSS-in-JS Decline**: Tailwind’s utility-first approach and ShadcnUI’s headless components will dominate 80% of new projects by 2027.  
 
+## Keywords  
+React, Next.js, useReducer, SOLID, WebAssembly, glfx.js, SSG, Redux Toolkit, ShadcnUI, FP  
+
+---  
+*Tone: Dryly notes that developers are finally learning what compilers do.*'
+"""
+    from src.models import GeneratedArticle
+
+    ic(GeneratedArticle.parse_markdown(text))
 
 if __name__ == "__main__":
-    test_embedder()
-    # test_digestor()
+    # test_article_parser()
+    # test_embedder()
+    test_digestor()
     # test_digest_parser()
    
