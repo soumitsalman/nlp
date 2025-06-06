@@ -4,7 +4,7 @@ def convert_to_onnx(model_id: str, save_directory):
     from optimum.onnxruntime import ORTModelForFeatureExtraction, ORTQuantizer, AutoQuantizationConfig
     from transformers import AutoTokenizer
 
-    model = ORTModelForFeatureExtraction.from_pretrained(model_id, export=True, cache_dir=".models")
+    model = ORTModelForFeatureExtraction.from_pretrained(model_id, export=True, cache_dir=os.getenv('HF_HOME'))
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     os.makedirs(save_directory, exist_ok=True)
   
@@ -19,7 +19,7 @@ def convert_to_openvino(model_id: str, save_directory):
     from datasets import load_dataset
 
     # Load the model and tokenizer
-    model = OVModelForFeatureExtraction.from_pretrained(model_id, export=True, cache_dir=".models")
+    model = OVModelForFeatureExtraction.from_pretrained(model_id, export=True, cache_dir=os.getenv('HF_HOME'))
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
     # Quantize the model to INT8 and save it
@@ -29,7 +29,7 @@ def convert_to_openvino(model_id: str, save_directory):
     tokenizer.save_pretrained(save_directory)
 
 if __name__ == "__main__":
-    convert_to_onnx("avsolatorio/GIST-small-Embedding-v0", "models/gist-small-embedding-v0-onnx")
+    convert_to_openvino("avsolatorio/GIST-small-Embedding-v0", "/home/soumitsr/codes/pycoffeemaker/.models/gist-small-embedding-v0-openvino")
     # convert_to_openvino("soumitsr/SmolLM2-360M-Instruct-article-digestor", "models/smollm2-360M-instruct-article-digestor-ovquant")
     # with open("embedder-test-data.json", "r") as file:
     #     data = json.load(file)

@@ -32,11 +32,20 @@ def chunk_tokens(input: str, context_len: int, encode_fn) -> list[str]:
     chunk_size = math.ceil(len(tokens) / num_chunks)
     return [tokens[start : start+chunk_size] for start in range(0, len(tokens), chunk_size)]
 
-truncate = lambda input, n_ctx: _encoding.decode(_encoding.encode(input)[:n_ctx]) 
+truncate = lambda input, n_ctx: _encoding.decode(_encoding.encode(input, allowed_special=_ALLOWED_SPECIAL_TOKENS)[:n_ctx]) 
 count_tokens = lambda input: len(_encoding.encode(input))
 
+_ALLOWED_SPECIAL_TOKENS = {
+    "<|endoftext|>",
+    "<|im_start|>",
+    "<|im_end|>",
+    "<|assistant|>", 
+    "<|system|>",
+    "<|human|>"
+}
+
 def batch_truncate(input_texts: list[str], n_ctx):
-    tokenlist = _encoding.encode_batch(input_texts, num_threads=os.cpu_count())
+    tokenlist = _encoding.encode_batch(input_texts, num_threads=os.cpu_count(), allowed_special=_ALLOWED_SPECIAL_TOKENS)
     tokenlist = [tokens[:n_ctx] for tokens in tokenlist]
     return _encoding.decode_batch(tokenlist, num_threads=os.cpu_count())
 

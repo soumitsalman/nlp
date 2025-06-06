@@ -137,10 +137,10 @@ class OVEmbeddings(Embeddings):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
-        input_tokens = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.context_len)
+        input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad():
             output_tokens = self.model(**input_tokens)
-            vecs = output_tokens.last_hidden_state.mean(dim=1)
+            vecs = output_tokens.last_hidden_state.mean(axis=1)
         return vecs
     
 class ORTEmbeddings(Embeddings):
@@ -158,10 +158,10 @@ class ORTEmbeddings(Embeddings):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
-        input_tokens = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.context_len)
+        input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad():
             output_tokens = self.model(**input_tokens)
-            vecs = output_tokens.last_hidden_state.mean(dim=1)   
+            vecs = output_tokens.last_hidden_state.mean(axis=1)   
         return vecs
 
 def from_path(
