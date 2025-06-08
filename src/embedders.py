@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from retry import retry
 from .utils import *
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +77,7 @@ class LlamaCppEmbeddings(Embeddings):
         self.lock = threading.Lock()
         self.model_path = model_path
         self.context_len = context_len
-        self.model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_batch=self.context_len, n_threads_batch=os.cpu_count(), n_threads=os.cpu_count(), embedding=True, verbose=False)
+        self.model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_batch=self.context_len, n_threads_batch=min(1, os.cpu_count()-1), n_threads=os.cpu_count(), embedding=True, verbose=False)
     
     def _embed(self, texts: list[str]):
         with self.lock:
@@ -118,6 +117,7 @@ class TransformerEmbeddings(Embeddings):
         self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs)
 
     def _embed(self, texts: str|list[str]):
+        import torch
         with torch.no_grad():
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
@@ -137,6 +137,7 @@ class OVEmbeddings(Embeddings):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
+        import torch
         input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad():
             output_tokens = self.model(**input_tokens)
@@ -158,6 +159,7 @@ class ORTEmbeddings(Embeddings):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
+        import torch
         input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad():
             output_tokens = self.model(**input_tokens)
