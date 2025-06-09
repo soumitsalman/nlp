@@ -3,7 +3,6 @@ import threading
 import os
 import numpy as np
 from abc import ABC, abstractmethod
-from llama_index.core.text_splitter import SentenceSplitter
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from retry import retry
@@ -12,21 +11,24 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 class Embeddings(ABC):
-    splitter: SentenceSplitter = None
+    splitter = None
+    context_len: int = None
 
     def __init__(self, context_len: int):
-        self.splitter = SentenceSplitter.from_defaults(
-            chunk_size=context_len-32, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
+        self.context_len = context_len        
+
+    def _split(self, text: str):
+        # NOTE: moving the import inside the function so that there is no need to install llama-index if the embedder is used only for small texts
+        from llama_index.core.text_splitter import SentenceSplitter
+        if not self.splitter: 
+            self.splitter = SentenceSplitter.from_defaults(
+            chunk_size=self.context_len-32, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
             chunk_overlap=0, 
             paragraph_separator="\n", 
             include_metadata=False, 
             include_prev_next_rel=False
         )
-
-    def _split(self, text: str):
-        splits = self.splitter.split_text(text)
-        # return random.sample(splits, k=min(len(splits), MAX_CHUNKS)) 
-        return splits       
+        return self.splitter.split_text(text)       
 
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
         texts = texts if isinstance(texts, list) else [texts]
@@ -45,23 +47,34 @@ class Embeddings(ABC):
         return embeddings
 
     @abstractmethod
-    def _embed(self, texts: list[str]):
+    def _embed(self, texts: str|list[str]):
         raise NotImplementedError("Subclass must implement abstract method")
     
-    def embed(self, texts: str|list[str]):
+    # def embed(self, texts: str|list[str]):
+    #     chunks, start_idx, counts = self._create_chunks(texts)
+    #     embeddings = self._embed(chunks)
+    #     embeddings = self._merge_chunks(embeddings, start_idx, counts)
+    #     return embeddings[0] if isinstance(texts, str) else embeddings
+    
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Takes a list of strings/large documents as input and chunks them into smaller pieces as needed based on the context length.
+        For each document it returns a mean of the embeddings of the chunks."""
+        if not texts: return
+        
         chunks, start_idx, counts = self._create_chunks(texts)
         embeddings = self._embed(chunks)
         embeddings = self._merge_chunks(embeddings, start_idx, counts)
         return embeddings[0] if isinstance(texts, str) else embeddings
     
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        if texts: return self.embed(texts)
-
     def embed_query(self, query: str) -> list[float]:
-        if query: return self.embed("query: "+query)
-        
+        """Embeds a single string as a query. It prepends `query: ` to the input. 
+        It processes the string without chunking or truncation for faster response."""
+        if query: return self._embed("query: "+query)        
+   
     def __call__(self, texts: str|list[str]):
-        if texts: return self.embed(texts)
+        """This takes a string or an list of strings as an input.
+        This calls the embedder directly without chunking or truncation for faster response"""
+        if texts: return self._embed(texts)
 
 
 # local embeddings from llama.cpp
@@ -77,11 +90,13 @@ class LlamaCppEmbeddings(Embeddings):
         self.lock = threading.Lock()
         self.model_path = model_path
         self.context_len = context_len
-        self.model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_batch=self.context_len, n_threads_batch=min(1, os.cpu_count()-1), n_threads=os.cpu_count(), embedding=True, verbose=False)
-    
-    def _embed(self, texts: list[str]):
+        n_threads = min(1, os.cpu_count()-1)
+        self.model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_threads_batch=n_threads, n_threads=n_threads, embedding=True, verbose=False)
+
+    def _embed(self, texts):
         with self.lock:
             embeddings = self.model.create_embedding(texts)
+        if isinstance(texts, str): return embeddings['data'][0]['embedding']
         return [data['embedding'] for data in embeddings['data']]
 
 class RemoteEmbeddings(Embeddings):
