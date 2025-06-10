@@ -328,18 +328,6 @@ def port_training_data_from_prod():
     }
     projection = {"_id": 1, "gist": 1, "content": 1, "entities": 1, "regions": 1}    
 
-    # beans = list(prod.beans.find(filter=filter, projection=projection))
-    # print("found stuff")
-    # for bean in beans:
-    #     bean['gist'] = re.sub(r'U:[^;]+;', '', bean['gist'])
-    #     bean['ped_digest'] = re.sub(r'[NRCS]:[^;]+;', '', bean['gist'])
-
-    #     er_digest = ""
-    #     if bean.get('entities'): er_digest += "N:"+("|".join(bean['entities']) if isinstance(bean['entities'], list) else bean['entities'])+";"
-    #     if bean.get('regions'): er_digest += "R:"+("|".join(bean['regions']) if isinstance(bean['regions'], list) else bean['regions'])+";"
-    #     if er_digest: bean['er_digest'] = er_digest
-    # local.beans.insert_many(beans, ordered=False)
-
     BATCH_SIZE = 1000
     def port(skip: int):
         beans = list(prod.beans.find(filter=filter, projection=projection, skip=skip, limit=BATCH_SIZE))
@@ -348,7 +336,8 @@ def port_training_data_from_prod():
         for bean in beans:
             bean['gist'] = bean['gist'].replace('\n', '').strip()
             if not bean['gist'].endswith(";"): bean['gist'] += ";"
-            bean['gist'] = re.sub(r'[UNRCS]:[^;]+;', '', bean['gist'])
+            bean['gist'] = re.sub(r'[UCS]:[^;]+;', '', bean['gist'])
+            bean['ped_digest'] = re.sub(r'[NR]:[^;]+;', '', bean['gist']).strip()
 
             er_digest = ""
             if bean.get('entities'): er_digest += "N:"+("|".join(bean['entities']) if isinstance(bean['entities'], list) else bean['entities'])+";"
@@ -362,13 +351,21 @@ def port_training_data_from_prod():
         executor.map(port, range(0, 449000, BATCH_SIZE))
 
 nuner_model = None
-LABELS = ["organization", "company", "person", "product", "initiative", "project", "geographic_region", "city", "country", "continent", "state"]
-def extract_nuner(text):
+NAMES = ['organization', 'company', 'person', 'product', 'initiative', 'project', 'programming_language', 'vulnerability', 'disease', 'problem'] 
+REGIONS = ['geographic_region', 'city', 'country', 'continent', 'state', 'park']
+LABELS = NAMES+REGIONS
+get_names = lambda result: list({res['text'] for res in result if res['label'] in NAMES})
+get_regions = lambda result: list({res['text'] for res in result if res['label'] in REGIONS})
+
+def extract_nuner(texts: list[str]):
     from gliner import GLiNER
     global nuner_model
     if not nuner_model: nuner_model = GLiNER.from_pretrained("numind/NuNerZero_span")
 
-    return nuner_model.predict_entities(text, LABELS)
+    results = ic(nuner_model.batch_predict_entities(ic(texts), LABELS))
+    names = list(map(get_names, results))
+    regions = list(map(get_regions, results))
+    return names, regions
 
 # def merge_entities(text, entities):
 #     if not entities:
@@ -393,7 +390,8 @@ def fix_names_and_regions_in_training_data():
     db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
     filter = {
         "ped_digest": { "$exists": True },
-        "er_digest": { "$exists": True }
+        "er_digest": { "$exists": True },
+        'gist_v2': { "$exists": False }
     }
     projection = {
         "_id": 1, 
@@ -401,35 +399,29 @@ def fix_names_and_regions_in_training_data():
         "ped_digest": 1
     }
 
-    for bean in db.beans.find(filter=filter, projection=projection):
-        bean['ped_digest'] = bean['ped_digest'].strip()
-        if not bean['ped_digest'].endswith(";"): bean['ped_digest'] += ";"
+    BATCH_SIZE = int(os.getenv("BATCH_SIZE", os.cpu_count()))
 
-        bean['ped_digest'] = re.sub(r'S:[^;]+;', '', bean['ped_digest']).strip()
-        if not bean['ped_digest'].endswith(";"): bean['ped_digest'] += ";"
+    while db.beans.count_documents(filter=filter, limit=1):
+        beans = list(db.beans.find(filter=filter, projection=projection, limit=BATCH_SIZE))
+        entities, regions = extract_nuner([bean['er_digest'] for bean in beans])
 
-        update = {'ped_digest': bean['ped_digest']}
-
-        entities, regions = [], []
-        for res in extract_nuner(bean['er_digest']):
-            if res['label'] in ['organization', 'company', 'person', 'product', 'initiative', 'project']:
-                entities.append(res['text'])
-            elif res['label'] in ['geographic_region', 'city', 'country', 'continent', 'state']:
-                regions.append(res['text'])
-
-        er_digest = ""
-        if entities: 
-            update['entities_v2'] = list(set(entities))
-            er_digest += "N:"+("|".join(update['entities_v2']))+";"
-        if regions: 
-            update['regions_v2'] = list(set(regions))
-            er_digest += "R:"+("|".join(update['regions_v2']))+";"
-       
-        if er_digest: 
-            update['er_digest_v2'] = er_digest
+        updates = []
+        for bean, ns, rs in zip(beans, entities, regions):
+            update = {
+                'entities_v2': ns,
+                'regions_v2': rs
+            }
+            er_digest = ""
+            if ns: er_digest += "N:"+("|".join(ns))+";"
+            if rs: er_digest += "R:"+("|".join(rs))+";"
+            if not er_digest: er_digest = None
+            update['er_digest'] = er_digest if er_digest else None
             update['gist_v2'] = bean['ped_digest'] + er_digest
-        
-        db.beans.update_one({"_id": bean["_id"]}, {"$set": update})   
+            
+            updates.append(UpdateOne(filter={"_id": bean["_id"]}, update={"$set": ic(update)}))
+        db.beans.bulk_write(updates, ordered=False)
+
+  
 
 
 if __name__ == "__main__":
