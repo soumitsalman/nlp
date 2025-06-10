@@ -314,10 +314,130 @@ def run_field_transform(beans, field: str, transform_func = lambda x: x):
             if field in bean: bean[field] = transform_func(bean[field])
     return beans
 
+def port_training_data_from_prod():
+    from concurrent.futures import ThreadPoolExecutor
+
+    prod = MongoClient(os.getenv('MONGODB_CONN_STR'))["test"]
+    local = MongoClient("mongodb://localhost:27017/")["trainingdata"]
+
+    filter = {
+        "gist": { 
+            "$exists": True,
+            "$regex": re.compile(r'^[UP]:')
+        }
+    }
+    projection = {"_id": 1, "gist": 1, "content": 1, "entities": 1, "regions": 1}    
+
+    # beans = list(prod.beans.find(filter=filter, projection=projection))
+    # print("found stuff")
+    # for bean in beans:
+    #     bean['gist'] = re.sub(r'U:[^;]+;', '', bean['gist'])
+    #     bean['ped_digest'] = re.sub(r'[NRCS]:[^;]+;', '', bean['gist'])
+
+    #     er_digest = ""
+    #     if bean.get('entities'): er_digest += "N:"+("|".join(bean['entities']) if isinstance(bean['entities'], list) else bean['entities'])+";"
+    #     if bean.get('regions'): er_digest += "R:"+("|".join(bean['regions']) if isinstance(bean['regions'], list) else bean['regions'])+";"
+    #     if er_digest: bean['er_digest'] = er_digest
+    # local.beans.insert_many(beans, ordered=False)
+
+    BATCH_SIZE = 1000
+    def port(skip: int):
+        beans = list(prod.beans.find(filter=filter, projection=projection, skip=skip, limit=BATCH_SIZE))
+        if not beans: return
+
+        for bean in beans:
+            bean['gist'] = bean['gist'].replace('\n', '').strip()
+            if not bean['gist'].endswith(";"): bean['gist'] += ";"
+            bean['gist'] = re.sub(r'[UNRCS]:[^;]+;', '', bean['gist'])
+
+            er_digest = ""
+            if bean.get('entities'): er_digest += "N:"+("|".join(bean['entities']) if isinstance(bean['entities'], list) else bean['entities'])+";"
+            if bean.get('regions'): er_digest += "R:"+("|".join(bean['regions']) if isinstance(bean['regions'], list) else bean['regions'])+";"
+            if er_digest: bean['er_digest'] = er_digest
+
+        local.beans.insert_many(beans, ordered=False)
+        ic(skip)
+       
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        executor.map(port, range(0, 449000, BATCH_SIZE))
+
+nuner_model = None
+LABELS = ["organization", "company", "person", "product", "initiative", "project", "geographic_region", "city", "country", "continent", "state"]
+def extract_nuner(text):
+    from gliner import GLiNER
+    global nuner_model
+    if not nuner_model: nuner_model = GLiNER.from_pretrained("numind/NuNerZero_span")
+
+    return nuner_model.predict_entities(text, LABELS)
+
+# def merge_entities(text, entities):
+#     if not entities:
+#         return []
+#     merged = []
+#     current = entities[0]
+#     for next_entity in entities[1:]:
+#         if next_entity['label'] == current['label'] and (next_entity['start'] == current['end'] + 1 or next_entity['start'] == current['end']):
+#             current['text'] = text[current['start']: next_entity['end']].strip()
+#             current['end'] = next_entity['end']
+#         else:
+#             merged.append(current)
+#             current = next_entity
+#     # Append the last entity
+#     merged.append(current)
+#     return merged
+
+
+
+
+def fix_names_and_regions_in_training_data():
+    db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
+    filter = {
+        "ped_digest": { "$exists": True },
+        "er_digest": { "$exists": True }
+    }
+    projection = {
+        "_id": 1, 
+        "er_digest": 1, 
+        "ped_digest": 1
+    }
+
+    for bean in db.beans.find(filter=filter, projection=projection):
+        bean['ped_digest'] = bean['ped_digest'].strip()
+        if not bean['ped_digest'].endswith(";"): bean['ped_digest'] += ";"
+
+        bean['ped_digest'] = re.sub(r'S:[^;]+;', '', bean['ped_digest']).strip()
+        if not bean['ped_digest'].endswith(";"): bean['ped_digest'] += ";"
+
+        update = {'ped_digest': bean['ped_digest']}
+
+        entities, regions = [], []
+        for res in extract_nuner(bean['er_digest']):
+            if res['label'] in ['organization', 'company', 'person', 'product', 'initiative', 'project']:
+                entities.append(res['text'])
+            elif res['label'] in ['geographic_region', 'city', 'country', 'continent', 'state']:
+                regions.append(res['text'])
+
+        er_digest = ""
+        if entities: 
+            update['entities_v2'] = list(set(entities))
+            er_digest += "N:"+("|".join(update['entities_v2']))+";"
+        if regions: 
+            update['regions_v2'] = list(set(regions))
+            er_digest += "R:"+("|".join(update['regions_v2']))+";"
+       
+        if er_digest: 
+            update['er_digest_v2'] = er_digest
+            update['gist_v2'] = bean['ped_digest'] + er_digest
+        
+        db.beans.update_one({"_id": bean["_id"]}, {"$set": update})   
+
+
 if __name__ == "__main__":
+    fix_names_and_regions_in_training_data()
+    # port_training_data_from_prod()
     # download_raw_data(100000, "raw_data")
     # asyncio.run(run_generate_extracts_async(".raw_data/raw-*.json", ".generated", ".extracts"))
-    asyncio.run(run_generate_summaries_async("raw_data/raw-*.json", ".generated", "summaries"))
+    # asyncio.run(run_generate_summaries_async("raw_data/raw-*.json", ".generated", "summaries"))
 
     # run_cleanup()
     # run_datarow_creation()
