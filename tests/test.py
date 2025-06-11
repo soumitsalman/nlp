@@ -190,9 +190,34 @@ React, Next.js, useReducer, SOLID, WebAssembly, glfx.js, SSG, Redux Toolkit, Sha
 
     ic(GeneratedArticle.parse_markdown(text))
 
+def test_digestor_perf():
+    from tqdm import tqdm
+    from src import prompts, agents, models, utils
+
+    BATCH_SIZE = 48
+    data = load_json("./tests/texts-for-nlp.json")
+
+    model_paths = ["HuggingFaceTB/SmolLM2-135M-Instruct", "HuggingFaceTB/SmolLM2-360M-Instruct", "google/long-t5-tglobal-base", "google/long-t5-local-base"]
+    for path in model_paths:
+        print("=========", path, "===========")
+        digestor = agents.from_path(
+            model_path=path,
+            max_input_tokens=4096,
+            max_output_tokens=384,
+            system_prompt="summarizer: "
+        )
+        with tqdm(total=len(data), desc="Progress: ") as pbar:
+            for i in range(0, len(data), BATCH_SIZE):
+                items = [d['content'] for d in data[i:i+BATCH_SIZE]]
+                digestor.run_batch(items)
+                pbar.update(len(items))
+
+
+
 if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
-    test_digestor()
+    # test_digestor()
+    test_digestor_perf()
     # test_digest_parser()
    

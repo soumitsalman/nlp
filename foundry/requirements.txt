@@ -9,3 +9,4 @@ transformers
 sentence-transformers
 azure-storage-blob
 pymongo
+gliner

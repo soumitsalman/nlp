@@ -5,11 +5,13 @@ import logging
 import os
 import random
 import re
+import torch
+from gliner import GLiNER
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from icecream import ic
 from openai import OpenAI
-
+from tqdm import tqdm
 from azure.storage.blob import ContainerClient, BlobProperties
 from datagen_prompts import *
 from utils import *
@@ -350,43 +352,27 @@ def port_training_data_from_prod():
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
         executor.map(port, range(0, 449000, BATCH_SIZE))
 
-nuner_model = None
-NAMES = ['organization', 'company', 'person', 'product', 'initiative', 'project', 'programming_language', 'vulnerability', 'disease', 'problem'] 
+# nuner_model = None
+def load_gliner_model(model_name = "numind/NuNerZero_span"):
+    # global nuner_model
+    model = GLiNER.from_pretrained(model_name, device_map="cuda", device="cuda", torch_dtype=torch.int8, trust_remote_code=True)
+    # if ic(torch.cuda.is_available()): model = model.cuda()
+    return model
+
+NAMES = ['organization', 'company', 'person', 'product', 'initiative', 'project', 'programming_language', 'vulnerability', 'disease'] 
 REGIONS = ['geographic_region', 'city', 'country', 'continent', 'state', 'park']
 LABELS = NAMES+REGIONS
 get_names = lambda result: list({res['text'] for res in result if res['label'] in NAMES})
 get_regions = lambda result: list({res['text'] for res in result if res['label'] in REGIONS})
-
-def extract_nuner(texts: list[str]):
-    from gliner import GLiNER
-    global nuner_model
-    if not nuner_model: nuner_model = GLiNER.from_pretrained("numind/NuNerZero_span")
-
-    results = ic(nuner_model.batch_predict_entities(ic(texts), LABELS))
+def extract_entities(model: GLiNER, texts: list[str]):
+    with torch.no_grad():
+        results = model.batch_predict_entities(texts, LABELS, threshold=0.6)
     names = list(map(get_names, results))
     regions = list(map(get_regions, results))
     return names, regions
 
-# def merge_entities(text, entities):
-#     if not entities:
-#         return []
-#     merged = []
-#     current = entities[0]
-#     for next_entity in entities[1:]:
-#         if next_entity['label'] == current['label'] and (next_entity['start'] == current['end'] + 1 or next_entity['start'] == current['end']):
-#             current['text'] = text[current['start']: next_entity['end']].strip()
-#             current['end'] = next_entity['end']
-#         else:
-#             merged.append(current)
-#             current = next_entity
-#     # Append the last entity
-#     merged.append(current)
-#     return merged
-
-
-
-
 def fix_names_and_regions_in_training_data():
+    model = load_gliner_model("numind/NuNerZero_span")
     db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
     filter = {
         "ped_digest": { "$exists": True },
@@ -399,32 +385,32 @@ def fix_names_and_regions_in_training_data():
         "ped_digest": 1
     }
 
-    BATCH_SIZE = int(os.getenv("BATCH_SIZE", os.cpu_count()))
+    BATCH_SIZE = int(os.getenv("BATCH_SIZE", 128))
 
-    while db.beans.count_documents(filter=filter, limit=1):
-        beans = list(db.beans.find(filter=filter, projection=projection, limit=BATCH_SIZE))
-        entities, regions = extract_nuner([bean['er_digest'] for bean in beans])
+    with tqdm(total=db.beans.count_documents(filter=filter), desc="Fixed") as pbard:
+        while db.beans.count_documents(filter=filter):
+            beans = list(db.beans.find(filter=filter, projection=projection, limit=BATCH_SIZE))
+            entities, regions = extract_entities(model, [bean['er_digest'] for bean in beans])
 
-        updates = []
-        for bean, ns, rs in zip(beans, entities, regions):
-            update = {
-                'entities_v2': ns,
-                'regions_v2': rs
-            }
-            er_digest = ""
-            if ns: er_digest += "N:"+("|".join(ns))+";"
-            if rs: er_digest += "R:"+("|".join(rs))+";"
-            if not er_digest: er_digest = None
-            update['er_digest'] = er_digest if er_digest else None
-            update['gist_v2'] = bean['ped_digest'] + er_digest
-            
-            updates.append(UpdateOne(filter={"_id": bean["_id"]}, update={"$set": ic(update)}))
-        db.beans.bulk_write(updates, ordered=False)
-
-  
+            updates = []
+            for bean, ns, rs in zip(beans, entities, regions):
+                update = {
+                    'entities_v2': ns if ns else None,
+                    'regions_v2': rs if rs else None,
+                }
+                er_digest = ""
+                if ns: er_digest += "N:"+("|".join(ns))+";"
+                if rs: er_digest += "R:"+("|".join(rs))+";"
+                update['er_digest'] = er_digest if er_digest else None
+                update['gist_v2'] = bean['ped_digest'] + er_digest
+                
+                updates.append(UpdateOne(filter={"_id": bean["_id"]}, update={"$set": update}))
+            pbard.update(db.beans.bulk_write(updates, ordered=False).modified_count)
 
 
 if __name__ == "__main__":
+    # torch.cuda.empty_cache()
+    # torch.cuda.ipc_collect()    
     fix_names_and_regions_in_training_data()
     # port_training_data_from_prod()
     # download_raw_data(100000, "raw_data")

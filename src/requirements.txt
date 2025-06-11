@@ -1,3 +1,4 @@
+accelerate
 optimum[intel] 
 optimum[onnxruntime]
 optimum[openvino]
