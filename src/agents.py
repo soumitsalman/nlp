@@ -12,6 +12,27 @@ BATCH_SIZE = int(os.getenv('BATCH_SIZE', os.cpu_count()))
 log = logging.getLogger(__name__)
 
 class TextGenerationClient(ABC):
+    def __init__(self, tokenizer = None, max_input_tokens: int = None, max_output_tokens: int = None, response_start: str = None, response_end: str = None):
+        self.tokenizer = tokenizer
+        self.max_input_tokens = max_input_tokens
+        self.max_output_tokens = max_output_tokens
+        self.response_start = response_start 
+        self.response_end = response_end
+
+    def _tokenize_prompts(self, prompts: list[dict[str, str]]|list[list[dict]], device: str = None):
+        append_contents = lambda prompt: "\n".join(p['content'] for p in prompt)
+        if self.tokenizer.chat_template: tokens = self.tokenizer.apply_chat_template(prompts, tokenize=True, add_generation_prompt=True, padding=True, truncation=True, max_length=self.max_input_tokens, return_tensors="pt", return_dict=True)
+        elif isinstance(prompts[0], dict): tokens = self.tokenizer(append_contents(prompts), padding=True, truncation=True, max_length=self.max_input_tokens, return_tensors="pt")
+        else: tokens = self.tokenizer(list(map(append_contents, prompts)), padding=True, truncation=True, max_length=self.max_input_tokens, return_tensors="pt")
+        
+        if device: tokens = tokens.to(device)
+        return tokens
+
+    def _extract_response(self, generated: str) -> str:
+        if self.response_start: generated = remove_before(generated, self.response_start)
+        if self.response_end: generated = remove_after(generated, self.response_end)
+        return generated
+
     @abstractmethod
     def run(self, prompt: list[dict[str, str]]) -> str:
         raise NotImplementedError("Subclass must implement abstract method")
@@ -91,106 +112,194 @@ class LlamaCppClient(TextGenerationClient):
             results = [self.run(text) for text in prompts]
         return results
     
-def _generate_input_tokens(tokenizer, prompts: list[dict[str, str]]|list[list[dict]], context_len, device: str=None):
-    append_contents = lambda prompt: "\n".join(p['content'] for p in prompt)
-    if tokenizer.chat_template: tokens = tokenizer.apply_chat_template(prompts, tokenize=True, add_generation_prompt=True, padding=True, padding_side='left', truncation=True, max_length=6144, return_dict=True, return_tensors="pt")
-    elif isinstance(prompts[0], dict): tokens = tokenizer(append_contents(prompts), padding=True, padding_side='left', truncation=True, max_length=context_len, return_tensors="pt")
-    else: tokens = tokenizer(list(map(append_contents, prompts)), padding=True, padding_side='left', truncation=True, max_length=context_len, return_tensors="pt")
-    
-    if device: tokens = tokens.to(device)
-    return tokens
-    
 DEFAULT_RESPONSE_START = "<|im_start|>assistant\n"
 DEFAULT_RESPONSE_END = "<|im_end|>"
 class TransformerClient(TextGenerationClient):
     model = None
-    tokenizer = None
     device = None
-    context_len = None
 
     def __init__(self, 
         model_id: str,
-        context_len: int,
+        max_input_tokens: int,
         max_output_tokens: int,
-        temperature: float,
         response_start: str,
         response_end: str
     ):
-        from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
         import torch
+        from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
 
-        self.context_len = context_len # this is a buffer
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        # super().__init__(
+        #     tokenizer=AutoTokenizer.from_pretrained(model_id, max_length=max_input_tokens, padding_side='left', use_fast=True),
+        #     max_input_tokens=max_input_tokens,
+        #     response_start=response_start,
+        #     response_end=response_end
+        # )
         # self.model =  AutoModelForCausalLM.from_pretrained(model_id, device_map=self.device).to(self.device)
-        self.model =  AutoModelForSeq2SeqLM.from_pretrained(model_id, device_map=self.device).to(self.device)
-        self.max_output_tokens = max_output_tokens
-        self.temperature = temperature
-        self.response_start = response_start
-        self.response_end = response_end
-
-    def _extract_response(self, generated: str) -> str:
-        generated = remove_before(generated, self.response_start)
-        return remove_after(generated, self.response_end)
+        super().__init__(
+            tokenizer=AutoTokenizer.from_pretrained(model_id, max_length=max_input_tokens, use_fast=True),
+            max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
+            response_start=response_start,
+            response_end=response_end
+        )
+        self.model =  AutoModelForSeq2SeqLM.from_pretrained(model_id, device_map=self.device, torch_dtype=torch.float16).to(self.device)
 
     def run(self, prompt):
         import torch
-        input_tokens = _generate_input_tokens(self.tokenizer, prompt, self.context_len, self.device)
         with torch.no_grad():
-            output_tokens = self.model.generate(**input_tokens, max_new_tokens=self.max_output_tokens, temperature=self.temperature)
-            generated_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=False)
-        return self._extract_response(generated_text)
+            input_tokens = self._tokenize_prompts(prompt, self.device)
+            output_tokens = self.model.generate(
+                **input_tokens,
+                max_new_tokens=self.max_output_tokens,
+                num_beams=1,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id
+            )
+            generated_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=bool(self.response_start))
+        return self._extract_response(generated_text) if self.response_start else generated_text
 
     def run_batch(self, prompts):
         import torch
-        input_tokens = _generate_input_tokens(self.tokenizer, prompts, self.context_len, self.device)
         with torch.no_grad():
-            output_tokens = self.model.generate(**input_tokens, max_new_tokens=self.max_output_tokens)
-            generated_texts = self.tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
-        return batch_run(self._extract_response, generated_texts, BATCH_SIZE)
+            input_tokens = self._tokenize_prompts(prompts, self.device)
+            output_tokens = self.model.generate(
+                **input_tokens,
+                max_new_tokens=self.max_output_tokens,
+                num_beams=1,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id
+            )
+            generated_texts = self.tokenizer.batch_decode(output_tokens, skip_special_tokens=bool(self.response_start))
+        return batch_run(self._extract_response, generated_texts, BATCH_SIZE) if self.response_start else generated_texts
+
     
 class OVClient(TextGenerationClient):
     model = None
-    tokenizer = None
-    context_len = None
+    max_output_tokens = None
 
     def __init__(self, 
         model_id: str,
-        context_len: int,
+        max_input_tokens: int,
         max_output_tokens: int,
-        temperature: float,
         response_start: str,
         response_end: str
     ):
         from transformers import AutoTokenizer
         from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        # super().__init__(
+        #     tokenizer=AutoTokenizer.from_pretrained(model_id, max_length=max_input_tokens, padding_side='left', use_fast=True),
+        #     max_input_tokens=max_input_tokens,
+        #     response_start=response_start,
+        #     response_end=response_end
+        # )
         # self.model =  OVModelForCausalLM.from_pretrained(model_id)
+        super().__init__(
+            tokenizer=AutoTokenizer.from_pretrained(model_id, max_length=max_input_tokens, use_fast=True),
+            max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
+            response_start=response_start,
+            response_end=response_end
+        )
         self.model = OVModelForSeq2SeqLM.from_pretrained(model_id)
-
-        self.context_len = context_len
-        self.max_output_tokens = max_output_tokens
-        self.temperature = temperature
-        self.response_start = response_start
-        self.response_end = response_end
-
-    def _extract_response(self, generated: str) -> str:
-        generated = remove_before(generated, self.response_start)
-        return remove_after(generated, self.response_end)
-
+        
     def run(self, prompt):
-        input_tokens = _generate_input_tokens(self.tokenizer, prompt, self.context_len)
-        output_tokens = self.model.generate(**input_tokens, max_new_tokens=self.max_output_tokens, temperature=self.temperature)
-        generated_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=False)
-        return self._extract_response(generated_text)
+        input_tokens = self._tokenize_prompts(prompt)
+        output_tokens = self.model.generate(
+            **input_tokens, 
+            max_new_tokens=self.max_output_tokens, 
+            num_beams=1
+        )
+        generated_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=bool(self.response_start))
+        return self._extract_response(generated_text) if self.response_start else generated_text
 
     def run_batch(self, prompts):
-        input_tokens = _generate_input_tokens(self.tokenizer, prompts, self.context_len)
-        output_tokens = self.model.generate(**input_tokens, max_new_tokens=self.max_output_tokens)
-        generated_texts = self.tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
-        return batch_run(self._extract_response, generated_texts, BATCH_SIZE)
+        input_tokens = self._tokenize_prompts(prompts)
+        output_tokens = self.model.generate(
+            **input_tokens, 
+            max_new_tokens=self.max_output_tokens,
+            num_beams=1
+        )
+        generated_texts = self.tokenizer.batch_decode(output_tokens, skip_special_tokens=bool(self.response_start))
+        return batch_run(self._extract_response, generated_texts, BATCH_SIZE) if self.response_start else generated_texts
 
+class ONNXClient(TextGenerationClient):
+    model = None
+
+    def __init__(self, 
+        model_id: str,
+        max_input_tokens: int,
+        max_output_tokens: int,
+        response_start: str,
+        response_end: str
+    ):
+        from transformers import AutoTokenizer
+        from optimum.onnxruntime import ORTModelForSeq2SeqLM, ORTModelForCausalLM      
+        # super().__init__(
+        #     tokenizer=AutoTokenizer.from_pretrained(model_id, max_length=max_input_tokens, padding_side='left', use_fast=True),
+        #     max_input_tokens=max_input_tokens,
+        #     response_start=response_start,
+        #     response_end=response_end
+        # )
+        # self.model = ORTModelForCausalLM.from_pretrained(
+        #     model_id,
+        #     provider_options={
+        #         'CPUExecutionProvider': {
+        #             'arena_extend_strategy': 'kSameAsRequested',
+        #             'cpu_threads': os.cpu_count(),  # Use all available CPU cores
+        #             'enable_parallel_execution': True,
+        #             'execution_mode': 'parallel'  # or 'parallel' for some models
+        #         }
+        #     },
+        #     provider="CPUExecutionProvider"
+        # )  
+        super().__init__(
+            tokenizer=AutoTokenizer.from_pretrained(model_id, max_length=max_input_tokens, use_fast=True),
+            max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
+            response_start=response_start,
+            response_end=response_end
+        )
+        self.model = ORTModelForSeq2SeqLM.from_pretrained(
+            model_id,
+            provider_options={
+                'CPUExecutionProvider': {
+                    'arena_extend_strategy': 'kSameAsRequested',
+                    'cpu_threads': os.cpu_count()-1,  # Use all available CPU cores
+                    'enable_parallel_execution': True,
+                    'execution_mode': 'parallel'  # or 'parallel' for some models
+                }
+            },
+            provider="CPUExecutionProvider"
+        )
+
+    def run(self, prompt):
+        import torch
+        with torch.no_grad():
+            input_tokens = self._tokenize_prompts(prompt)
+            output_tokens = self.model.generate(
+                **input_tokens,
+                max_new_tokens=self.max_output_tokens,
+                num_beams=1,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id
+            )
+            generated_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=bool(self.response_start))
+        return self._extract_response(generated_text) if self.response_start else generated_text
+
+    def run_batch(self, prompts):
+        import torch
+        with torch.no_grad():
+            input_tokens = self._tokenize_prompts(prompts)
+            output_tokens = self.model.generate(
+                **input_tokens,
+                max_new_tokens=self.max_output_tokens,
+                num_beams=1,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id
+            )
+            generated_texts = self.tokenizer.batch_decode(output_tokens, skip_special_tokens=bool(self.response_start))
+        return batch_run(self._extract_response, generated_texts, BATCH_SIZE) if self.response_start else generated_texts
     
 class SimpleAgent:
     client: TextGenerationClient
@@ -246,11 +355,11 @@ def from_path(
     temperature: float = DEFAULT_TEMPERATURE,
     json_mode: bool = False
 ) -> SimpleAgent:
-    context_len = max_input_tokens+(max_output_tokens<<1)
+    context_len = max_input_tokens+(len(system_prompt) if system_prompt else 0) # this is an approximation
     if base_url: client = RemoteClient(model_path, base_url, api_key, max_output_tokens, temperature, json_mode)
     elif model_path.startswith(LLAMACPP_PREFIX): client = LlamaCppClient(model_path.removeprefix(LLAMACPP_PREFIX), context_len, max_output_tokens, temperature, json_mode)
-    elif model_path.startswith(OPENVINO_PREFIX): client = OVClient(model_path.removeprefix(OPENVINO_PREFIX), context_len, max_output_tokens, temperature, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
-    elif model_path.startswith(ONNX_PREFIX): raise NotImplementedError()
-    else: client = TransformerClient(model_path, context_len, max_output_tokens, temperature, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
+    elif model_path.startswith(OPENVINO_PREFIX): client = OVClient(model_path.removeprefix(OPENVINO_PREFIX), context_len, max_output_tokens, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
+    elif model_path.startswith(ONNX_PREFIX): client = ONNXClient(model_path.removeprefix(ONNX_PREFIX), context_len, max_output_tokens, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
+    else: client = TransformerClient(model_path, context_len, max_output_tokens, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
     
     return SimpleAgent(client, max_input_tokens, system_prompt, output_parser)
