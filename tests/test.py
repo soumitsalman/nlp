@@ -194,22 +194,33 @@ def test_digestor_perf():
     from tqdm import tqdm
     from src import prompts, agents, models, utils
 
-    BATCH_SIZE = 48
-    data = load_json("./tests/texts-for-nlp.json")
+    BATCH_SIZE = 3
+    data = load_json("./tests/texts-for-nlp.json")[:24]
 
-    model_paths = ["HuggingFaceTB/SmolLM2-135M-Instruct", "HuggingFaceTB/SmolLM2-360M-Instruct", "google/long-t5-tglobal-base", "google/long-t5-local-base"]
+    model_paths = [
+        # "openvino:///home/soumitsr/codes/pycoffeemaker/.models/SmolLM2-135M-Instruct-openvino", 
+        # "openvino:///home/soumitsr/codes/pycoffeemaker/.models/SmolLM2-360M-Instruct-openvino"
+        # "HuggingFaceTB/SmolLM2-135M-Instruct",
+        # "HuggingFaceTB/SmolLM2-360M-Instruct",
+        # "google/long-t5-local-base",
+        "google/long-t5-tglobal-base",
+        # "openvino:///home/soumitsr/codes/pycoffeemaker/.models/long-t5-local-base-openvino",
+        "openvino:///home/soumitsr/codes/pycoffeemaker/.models/long-t5-tglobal-base-openvino"
+
+    ]
     for path in model_paths:
-        print("=========", path, "===========")
+        
         digestor = agents.from_path(
             model_path=path,
             max_input_tokens=4096,
             max_output_tokens=384,
-            system_prompt="summarizer: "
+            system_prompt="summarize: "
         )
-        with tqdm(total=len(data), desc="Progress: ") as pbar:
+        print("=========", path, "===========")
+        with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
             for i in range(0, len(data), BATCH_SIZE):
                 items = [d['content'] for d in data[i:i+BATCH_SIZE]]
-                digestor.run_batch(items)
+                [ic(r[:100]) for r in digestor.run_batch(items)]
                 pbar.update(len(items))
 
 
