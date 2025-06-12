@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+from itertools import chain
 import json
 import logging
 import os
@@ -407,11 +408,116 @@ def fix_names_and_regions_in_training_data():
                 updates.append(UpdateOne(filter={"_id": bean["_id"]}, update={"$set": update}))
             pbard.update(db.beans.bulk_write(updates, ordered=False).modified_count)
 
+def clean_compressed_digest(digest: str):
+    if not digest: return digest
+
+    results = {"P:": [], "E:": [], "D:": [], "N:": [], "R:": []}
+    current_pos = 0
+    while current_pos < len(digest):
+        key = digest[current_pos: current_pos+2]
+        if key in results:
+            next_key_pos = [digest.find(";"+next_key, current_pos+2) for next_key in results.keys()]
+            end = min([pos for pos in next_key_pos if pos>-1], default=len(digest))
+            if digest[end-1] == ';': ext = digest[current_pos+2: end-1]
+            else: ext = digest[current_pos+2: end]
+
+            results[key].extend(chain(*(item.strip().split(';') for item in ext.strip().split("|"))))
+            current_pos = end
+
+        current_pos += 1
+
+    digest = ""    
+    for key, value in results.items():
+        if not value: continue
+        digest += key+"|".join(v.strip() for v in value)+";"
+        
+    return digest
+
+def clean_compressed_digests_in_training_data():
+    FILTER = {
+        'gist_v2': { "$exists": True }
+    }
+    PROJECT = {
+        "_id": 1,
+        "gist_v2": 1,
+        "ped_digest": 1       
+    }
+    BATCH_SIZE = 1000
+
+    db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
+    def clean_chunk(start: int):
+        beans = list(db.beans.find(filter=FILTER, skip=start, limit=BATCH_SIZE, projection=PROJECT))
+        for bean in beans:
+            bean['gist_v2'] = clean_compressed_digest(bean['gist_v2'])
+            bean['ped_digest'] = clean_compressed_digest(bean['ped_digest'])
+        db.beans.bulk_write(UpdateOne({"_id": bean['_id']}, {"$set": {'gist_v2': bean['gist_v2']}}), ordered=False)
+    with ThreadPoolExecutor(max_workers=os.cpu_count()<<2) as exec:
+        exec.map(clean_chunk, range(0, db.beans.count_documents(FILTER), BATCH_SIZE))
+
+
+def create_data_from_compressed_digests():
+    FILTER = {
+        'gist_v2': { "$exists": True }
+    }
+    PROJECT = {
+        "_id": 1,
+        "content": 1,   
+        "ped_digest": 1,
+        "er_digest": 1,
+        "gist_v2": 1,
+        "entities_v2": 1,
+        "regions_v2": 1
+    }
+
+    db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
+    beans = list(db.beans.find(filter=FILTER, projection=PROJECT))
+    for bean in beans:
+        bean['gist'] = bean.pop('gist_v2')
+        bean['entities'] = bean.pop('entities_v2', None) or None
+        bean['regions'] = bean.pop('regions_v2', None) or None
+
+    save_data_to_directory(
+        beans, 
+        "/home/soumitsr/codes/pycoffeemaker/coffeemaker/nlp/foundry/data/compressed-digests",
+        "compressed"
+    )
+    
+def create_dataset_from_compressed_digests():
+    FILTER = {
+        'gist_v2': { "$exists": True }
+    }
+    PROJECT = {
+        "_id": 1,
+        "content": 1,    
+        "gist_v2": 1        
+    }
+
+    db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
+    beans = list(db.beans.find(filter=FILTER, projection=PROJECT))
+    for bean in beans:
+        bean['input'] = bean.pop('content')
+        bean['output'] = bean.pop('gist_v2')
+
+    save_jsonl_to_directory(
+        beans, 
+        "/home/soumitsr/codes/pycoffeemaker/coffeemaker/nlp/foundry/.dataset",
+        "digests"
+    )
 
 if __name__ == "__main__":
     # torch.cuda.empty_cache()
-    # torch.cuda.ipc_collect()    
-    fix_names_and_regions_in_training_data()
+    # torch.cuda.ipc_collect() 
+    clean_compressed_digests_in_training_data()
+    create_data_from_compressed_digests()
+    create_dataset_from_compressed_digests()
+    # digests = [
+    #     "P:Capital One miles can be redeemed for gift cards and cash back, but travel redemptions offer the most value;5 best ways to use Capital One Miles: Flights, Hotels, Other Travel Rewards, Cash Back, Gift Cards;Transferring miles to travel partners can yield more value than standard redemption rates;Capital One occasionally offers transfer bonuses to travel partners;Redeeming miles for cash back, gift cards, online shopping, or experiences typically yields less value than travel redemptions;Capital One miles transfer at a one-to-one ratio to most hotel and airline partners;E:Capital One updated fact-checking process;Ben Walker, CEPF, CFEI® authored the article;Mindy Woodall edited the article;Article updated June 6, 2025;Capital One miles can be used for flights, hotels, and car rentals;Amusement park tickets may be redeemable as travel through third-party sites like Undercover Tourist;D:Standard Capital One Travel redemption value is $0.01 per mile;Business class flight from New York to Paris costs $4,286.31 or 259,000 miles;Wyndham-Vacasa partnership charges 15,000 or 30,000 points per bedroom per night;Cash back redemption rate is 0.5 cent per mile;Gift card redemption rates range from 0.8 to 1 cent per mile;Capital One Venture Rewards Credit Card offers a 75,000 miles welcome bonus;Capital One Venture X Rewards Credit Card offers a $300 Capital One Travel credit annually;Paris;New York;Wyndham;Vacasa;Airbnb;VRBO;Universal Studios;Disneyland;Amazon;Apple;British Airways;Air Canada;Air France KLM;TAP Air Portugal;Singapore Airlines;JetBlue;Emirates;Qantas;EVA Air;Virgin Red;Accor;Choice;Turkish Airlines;Cathay Pacific;Finnair;Avianca;Ben Walker;Mindy Woodall;Capital One Travel;Expedia;Priceline;Air Canada;Air France KLM;British Airways;Wyndham Rewards;Undercover Tourist;Bank of America;N:Mindy Woodall|Ben Walker;R:Paris;",
+    #     """P:Potential EU youth mobility scheme|Starmer signals openness to deal|Scheme not freedom of movement|Concerns over uncapped migration|Labour's "red line" on freedom of movement|Agreement expected in principle only|EU seeks up to 4yr stays, UK 1-2yr|Prior Brexit offered similar rights|Existing YMS with Australia, Japan etc|Visas subject to quotas|Tory govt previously rejected EU offer|Khan wants consistent messaging|Lib Dems welcome scheme|Brexit made UK study less attractive|Fishing rights also on agenda|Starmer focuses on economic benefits;E:Summit between UK & EU on Monday|Badenoch criticizes scheme as "back door" free movement|Tice calls scheme "thin end" of free movement|Thomas-Symonds confirms consideration of scheme|Rejection of previous EU offer by Tory govt|Khan comments on mixed messaging;D:18-30 age range considered in previous EU offer|18-35 age range for UK-Australia YMS|100-42000 visa quotas for existing schemes|Since Aug 2021, EU students face international fees;N:Keir Starmer|Laura Kuenssberg|Times|BBC News|EU|James MacCleary|Kemi Badenoch|Richard Tice|Sadiq Khan|Nick Thomas-Symonds;R:Australia|Uruguay|UK|South Korea|Japan|London;""",
+    #     """P:Costco shopping tips;P:Smart spending;P:Bulk buying;P:Pantry staples;P:Rewards card;E:Article update;E:Fact-checking process;E:Card application;E:Savings on groceries;E:Summer deals;E:Father's Day promotions;D:2% cash rewards;D:$200 cash bonus;D:0% intro APR;D:$14.99 (Goldfish Crackers);D:$15.99 (Kirkland Trail Mix);D:$13.39 (Kirkland Pizza);D:$17.99 (Kirkland Tuna);D:$14.99 (Seeds of Change Quinoa);D:$6.19 (Cosmic Crisp Apples);D:$5.84 (Rotisserie Chicken);D:$11.99 (Kirkland Shampoo);N:Goldfish Crackers|Jenny Cohen|Costco|Sara Albertelli;R:United States;"""
+    # ]   
+    # list(map(clean_compressed_digest, digests))
+    
+    # fix_names_and_regions_in_training_data()
     # port_training_data_from_prod()
     # download_raw_data(100000, "raw_data")
     # asyncio.run(run_generate_extracts_async(".raw_data/raw-*.json", ".generated", ".extracts"))

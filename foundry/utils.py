@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import glob
 import logging
 from retry import retry
@@ -88,20 +89,23 @@ def save_data_to_file_path(items, file_path):
     with open(file_path, "w") as file:
         json.dump(items, file)
 
-def save_data_to_directory(beans: list[dict], directory: str, file_name_prefix: str):
+def save_jsonl_to_file_path(items, file_path):
+    if not items: return
+    with open(file_path, "w") as file:
+        file.writelines([json.dumps(row)+"\n" for row in items])
+
+def save_data_to_directory(data: list[dict], directory: str, file_name_prefix: str):
     os.makedirs(directory, exist_ok=True)
     batch_size = 1000
-    for i in range(0, len(beans), batch_size):
-        to_write = beans[i:i+batch_size]
-        save_data_to_file_path(to_write, f"{directory}/{file_name_prefix}-{i}-{i+len(to_write)}.json")
-
+    with ThreadPoolExecutor(max_workers=os.cpu_count()<<1) as exec:
+        exec.map(lambda i: save_data_to_file_path(data[i:i+batch_size], f"{directory}/{file_name_prefix}-{i}-{i+len(data[i:i+batch_size])}.json"), range(0, len(data), batch_size))
+   
 def save_jsonl_to_directory(data: list[dict], directory: str, file_name_prefix: str):
     os.makedirs(directory, exist_ok=True)
     batch_size = 1000
-    for i in range(0, len(data), batch_size):
-        with open(f"{directory}/{file_name_prefix}-{i}-{i+batch_size}.jsonl", "w") as file:
-            file.writelines([json.dumps(row)+"\n" for row in data[i:i+batch_size]])
-
+    with ThreadPoolExecutor(max_workers=os.cpu_count()<<1) as exec:
+        exec.map(lambda i: save_jsonl_to_file_path(data[i:i+batch_size], f"{directory}/{file_name_prefix}-{i}-{i+len(data[i:i+batch_size])}.jsonl"), range(0, len(data), batch_size))
+       
 def port_data(from_file_pattern: str, to_directory: str, to_prefix: str):
     beans = load_data_from_directory(from_file_pattern)
     collected = int(datetime.now().timestamp())
