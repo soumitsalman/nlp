@@ -355,7 +355,7 @@ def port_training_data_from_prod():
 # nuner_model = None
 def load_gliner_model(model_name = "numind/NuNerZero_span"):
     # global nuner_model
-    model = GLiNER.from_pretrained(model_name, device_map="cuda", device="cuda", torch_dtype=torch.int8, trust_remote_code=True)
+    model = GLiNER.from_pretrained(model_name, torch_dtype=torch.qint8, max_length=384)
     # if ic(torch.cuda.is_available()): model = model.cuda()
     return model
 
@@ -387,7 +387,7 @@ def fix_names_and_regions_in_training_data():
 
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", 128))
 
-    with tqdm(total=db.beans.count_documents(filter=filter), desc="Fixed") as pbard:
+    with tqdm(total=db.beans.count_documents(filter=filter), desc="Fixed", unit="bean") as pbard:
         while db.beans.count_documents(filter=filter):
             beans = list(db.beans.find(filter=filter, projection=projection, limit=BATCH_SIZE))
             entities, regions = extract_entities(model, [bean['er_digest'] for bean in beans])
