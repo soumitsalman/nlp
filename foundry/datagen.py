@@ -435,24 +435,44 @@ def clean_compressed_digest(digest: str):
 
 def clean_compressed_digests_in_training_data():
     FILTER = {
-        'gist_v2': { "$exists": True }
+        # 'gist_v2': { "$exists": True }
     }
     PROJECT = {
         "_id": 1,
+        "gist": 1,
         "gist_v2": 1,
         "ped_digest": 1       
     }
     BATCH_SIZE = 1000
 
     db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
-    def clean_chunk(start: int):
-        beans = list(db.beans.find(filter=FILTER, skip=start, limit=BATCH_SIZE, projection=PROJECT))
-        for bean in beans:
-            bean['gist_v2'] = clean_compressed_digest(bean['gist_v2'])
-            bean['ped_digest'] = clean_compressed_digest(bean['ped_digest'])
-        db.beans.bulk_write(UpdateOne({"_id": bean['_id']}, {"$set": {'gist_v2': bean['gist_v2']}}), ordered=False)
-    with ThreadPoolExecutor(max_workers=os.cpu_count()<<2) as exec:
-        exec.map(clean_chunk, range(0, db.beans.count_documents(FILTER), BATCH_SIZE))
+    beans = list(db.beans.find(filter=FILTER, projection=PROJECT))
+    ic(len(beans))
+    for bean in beans:
+        bean['gist_v2'] = clean_compressed_digest(bean.get('gist_v2') or bean.get('gist'))
+        bean['ped_digest'] = clean_compressed_digest(bean['ped_digest'])
+    # def clean_chunk(start: int):
+    #     beans = list(db.beans.find(filter=FILTER, skip=start, limit=BATCH_SIZE, projection=PROJECT))
+        # for bean in beans:
+        #     bean['gist_v2'] = clean_compressed_digest(bean.get('gist_v2') or bean.get('gist'))
+        #     bean['ped_digest'] = clean_compressed_digest(bean['ped_digest'])
+    
+    db.beans.bulk_write(
+        [
+            UpdateOne(
+                {"_id": bean['_id']}, 
+                {
+                    "$set": {
+                        'gist_v2': bean['gist_v2'], 
+                        'ped_digest': bean['ped_digest']
+                    }
+                }
+            ) for bean in beans
+        ],
+        ordered=False
+    )
+    # with ThreadPoolExecutor(max_workers=os.cpu_count()<<2) as exec:
+    #     exec.map(clean_chunk, range(0, ic(db.beans.count_documents(FILTER)), BATCH_SIZE))
 
 
 def create_data_from_compressed_digests():
@@ -471,6 +491,7 @@ def create_data_from_compressed_digests():
 
     db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
     beans = list(db.beans.find(filter=FILTER, projection=PROJECT))
+    ic(len(beans))
     for bean in beans:
         bean['gist'] = bean.pop('gist_v2')
         bean['entities'] = bean.pop('entities_v2', None) or None
@@ -478,7 +499,7 @@ def create_data_from_compressed_digests():
 
     save_data_to_directory(
         beans, 
-        "/home/soumitsr/codes/pycoffeemaker/coffeemaker/nlp/foundry/data/compressed-digests",
+        "./foundry/data/compressed-digests",
         "compressed"
     )
     
@@ -494,13 +515,14 @@ def create_dataset_from_compressed_digests():
 
     db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
     beans = list(db.beans.find(filter=FILTER, projection=PROJECT))
+    ic(len(beans))
     for bean in beans:
         bean['input'] = bean.pop('content')
         bean['output'] = bean.pop('gist_v2')
 
     save_jsonl_to_directory(
         beans, 
-        "/home/soumitsr/codes/pycoffeemaker/coffeemaker/nlp/foundry/.dataset",
+        "./foundry/.dataset",
         "digests"
     )
 
