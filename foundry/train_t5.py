@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 from datasets import load_dataset
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -40,19 +41,19 @@ def prepare_dataset(dataset, tokenizer):
             max_length=5000,  # Long-T5 supports up to 16384, but we use 4096
             truncation=True,
             padding=True,
-            return_tensors="pt",
+            return_tensors="np",
         )
         outputs = tokenizer(
             examples["output"],
             max_length=512,  # Factoids are short
             truncation=True,
             padding=True,
-            return_tensors="pt",
+            return_tensors="np",
         )
         return {
-            "input_ids": inputs["input_ids"].squeeze(),
-            "attention_mask": inputs["attention_mask"].squeeze(),
-            "labels": outputs["input_ids"].squeeze(),
+            "input_ids": np.asarray(inputs["input_ids"].squeeze(), dtype=np.int64),
+            "attention_mask": np.asarray(inputs["attention_mask"].squeeze(), dtype=np.int64),
+            "labels": np.asarray(outputs["input_ids"].squeeze(), dtype=np.int64)
         }
 
     tokenized_dataset = dataset.map(
