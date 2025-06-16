@@ -67,7 +67,6 @@ def test_digestor():
         max_output_tokens=512,
         system_prompt=prompts.DIGEST_SYSTEM_PROMPT,
         output_parser=models.Digest.parse_compressed,
-        temperature=0.3,
         json_mode=False
     )
     inputs = load_json("./tests/texts-for-nlp.json")
@@ -155,40 +154,11 @@ def test_deterministic_reject():
 
 
 def test_article_parser():
-    text = """
-# React & Next.js: Modern Web Development Paradigms  
-
-## Analysis  
-Recent technical reports highlight a concentrated push toward optimizing React/Next.js ecosystems, emphasizing **state management**, **performance enhancements**, and **component modularity**. Key patterns include:  
-
-1. **State Management Evolution**: Adoption of `useReducer`, Redux Toolkit, and SOLID principles to replace scattered `useState` logic, reducing re-renders by 30-40% in complex apps.  
-2. **Image Optimization Surge**: Next.js 15’s `next/image` dominates discussions, with techniques like dominant color placeholders and GPU-accelerated processing (glfx.js) cutting LCP times by 50%.  
-3. **Custom Hooks Proliferation**: 25+ optimization strategies leverage hooks like `useFetch` and `useWindowSize` to decouple logic from UI, aligning with FP/currying patterns for testability.  
-4. **WebAssembly Integration**: Emerging use cases in image vectorization (Three.js) and real-time filters demonstrate a shift toward client-side GPU workloads, bypassing traditional REST bottlenecks.  
-
-## Key Datapoints  
-- React 19’s compiler automates memoization, doubling rendering speeds in benchmarks.  
-- Next.js 15 reduces SSG hydration mismatches by 60% via enhanced `hydrateRoot` API.  
-- `sharp` library processes 10,000+ images/sec in Node.js batch operations (v0.33.x).  
-- Redux Toolkit cuts boilerplate by 70% compared to legacy Redux implementations.  
-
-## Verdict  
-Modern web stacks prioritize **deterministic state flow** and **GPU-driven rendering**, with React/Next.js acting as catalysts. The industry is deprecating useEffect-heavy architectures in favor of compiler-optimized derivations (useMemo) and WebAssembly pipelines, signaling a maturation phase for SPAs.  
-
-## Predictions  
-- **Widespread React 19 Adoption**: Automatic reactivity tuning will marginalize manual memoization by 2026.  
-- **Rise of Edge-AI Components**: On-device models (e.g., DeepSeek R-1) will integrate with useReducer for real-time UI personalization.  
-- **CSS-in-JS Decline**: Tailwind’s utility-first approach and ShadcnUI’s headless components will dominate 80% of new projects by 2027.  
-
-## Keywords  
-React, Next.js, useReducer, SOLID, WebAssembly, glfx.js, SSG, Redux Toolkit, ShadcnUI, FP  
-
----  
-*Tone: Dryly notes that developers are finally learning what compilers do.*'
-"""
     from src.models import GeneratedArticle
-
-    ic(GeneratedArticle.parse_markdown(text))
+    inputs = load_json(os.path.join(os.path.dirname(__file__), "text-for-generator.json"))
+    articles = [GeneratedArticle.parse_markdown(inp["content"]) for inp in inputs]
+    for a in articles:
+        ic(a.title, a.intro, a.analysis, a.insights, a.verdict, a.predictions, a.keywords)
 
 def test_digestor_perf():
     from tqdm import tqdm
@@ -229,6 +199,6 @@ if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
     # test_digestor()
-    test_digestor_perf()
-    # test_digest_parser()
+    # test_digestor_perf()
+    test_digest_parser()
    

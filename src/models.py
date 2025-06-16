@@ -1,3 +1,4 @@
+from itertools import chain
 import json
 from typing import Optional
 from pydantic import BaseModel, Field
@@ -82,88 +83,140 @@ class Digest(BaseModel):
                 digest.insight = line
 
         return digest   
-
+    
     def parse_compressed(response: str):
-        response = response.strip()
-        if not response: return
+        if not response: return response
+
+        results = {"P:": [], "E:": [], "D:": [], "N:": [], "R:": []}
+        current_pos = 0
+        while current_pos < len(response):
+            key = response[current_pos: current_pos+2]
+            if key in results:
+                next_key_pos = [response.find(";"+next_key, current_pos+2) for next_key in results.keys()]
+                end = min([pos for pos in next_key_pos if pos>-1], default=len(response))
+                if response[end-1] == ';': ext = response[current_pos+2: end-1]
+                else: ext = response[current_pos+2: end]
+
+                results[key].extend(chain(*(item.strip().split(';') for item in ext.strip().split("|"))))
+                current_pos = end
+
+            current_pos += 1
+
+        response = ""    
+        for key, value in results.items():
+            if not value: continue
+            response += key+"|".join(v.strip() for v in value)+";"
         
-        digest = Digest(raw = response)
-        parts = [part.strip() for part in split_parts(response, r'[;\|\n]+') if part != UNDETERMINED]
-        add_to = None
-        for part in parts:
-            prefix = next((field for field in COMPRESSED_FIELDS if part.startswith(field)), None)
+        return Digest(
+            raw=response, 
+            keypoints=results.get("P:"),
+            keyevents=results.get("E:"),
+            datapoints=results.get("D:"),
+            entities=results.get("N:"),
+            regions=results.get("R:"),
+        )
 
-            if prefix:
-                part = part.removeprefix(prefix)
-                add_to = prefix
+    # def parse_compressed(response: str):
+    #     response = response.strip()
+    #     if not response: return
+        
+    #     digest = Digest(raw = response)
+    #     parts = [part.strip() for part in split_parts(response, r'[;\|\n]+') if part != UNDETERMINED]
+    #     add_to = None
+    #     for part in parts:
+    #         prefix = next((field for field in COMPRESSED_FIELDS if part.startswith(field)), None)
+
+    #         if prefix:
+    #             part = part.removeprefix(prefix)
+    #             add_to = prefix
             
-            if add_to == C_REGIONS:
-                if isalphaorspace(part): digest.regions.append(part)
-            elif add_to == C_ENTITIES:
-                digest.entities.append(part)
-            elif add_to == C_CATEGORIES:
-                if isalphaorspace(part): digest.categories.append(part)
-            elif add_to == C_SENTIMENTS:
-                if part.isalpha(): digest.sentiments.append(part)
+    #         if add_to == C_REGIONS:
+    #             if isalphaorspace(part): digest.regions.append(part)
+    #         elif add_to == C_ENTITIES:
+    #             digest.entities.append(part)
+    #         elif add_to == C_CATEGORIES:
+    #             if isalphaorspace(part): digest.categories.append(part)
+    #         elif add_to == C_SENTIMENTS:
+    #             if part.isalpha(): digest.sentiments.append(part)
 
-        digest.regions = clean_up(digest.regions)
-        digest.entities = clean_up(digest.entities)
-        digest.categories = clean_up(digest.categories)
-        digest.sentiments = clean_up(digest.sentiments)
+    #     digest.regions = clean_up(digest.regions)
+    #     digest.entities = clean_up(digest.entities)
+    #     digest.categories = clean_up(digest.categories)
+    #     digest.sentiments = clean_up(digest.sentiments)
 
-        return digest
+    #     return digest
 
 _THSTART = "<think>"
 _THEND = "</think>"
 M_TITLE_PREFIX = ["Topic:", "Topics:", "Intelligence Briefing:", "News Recap:"]
-M_INTRODUCTION = ["# Introduction", "## Introduction"]
+M_TITLE = ["## Title"]
+M_INTRODUCTION = ["## Introduction"]
 M_ANALYSIS = ["## Analysis"]
-M_TAKEAWAYS = ["## Key Datapoints", "## Key Takeaways", "## Key Trends & Insights"]
+M_INSIGHTS = ["## Key Datapoints", "## Key Takeaways", "## Key Trends & Insights", "## Datapoints", "## Takeaways"]
 M_VERDICT = ["## Verdict", "## Conclusion"]
 M_PREDICTION = ["## Prediction", "## Predictions"]
 M_KEYWORDS = ["## Keywords"]
+A_FIELDS = list(chain(*[M_TITLE, M_INTRODUCTION, M_ANALYSIS, M_INSIGHTS, M_VERDICT, M_PREDICTION, M_KEYWORDS]))
+
 class GeneratedArticle(BaseModel):
     raw: str
     title: str = Field(default=None)
-    intro: list[str] = Field(default=[])
+    intro: Optional[str] = Field(default=None)
     analysis: list[str] = Field(default=[])
     insights: list[str] = Field(default=[])
-    verdict: list[str] = Field(default=[])
-    predictions: list[str] = Field(default=[])
+    verdict: str = Field(default="")
+    predictions: Optional[list[str]] = Field(default=[])
     keywords: Optional[list[str]] = None
+
+    def parse_json(text: str):
+        text = text.strip()
+        # text = remove_before(text, _THEND).strip()
+        text = text.removeprefix("```json").removesuffix("```").strip()
+        if not text: return
+        
+        try:
+            data = json.loads(text)
+            return GeneratedArticle(
+                raw=text,
+                title=data.get("title"),
+                intro=data.get("intro"),
+                analysis=data.get("analysis"),
+                insights=data.get("datapoints") or data.get("takeaways"),
+                verdict=data.get("verdict"),
+                predictions = data.get("predictions"),
+                keywords = data.get("keywords")
+            )
+        except json.JSONDecodeError: print(text)
 
     def parse_markdown(text: str):
         text = text.strip()
-        text = remove_before(text, _THEND).strip()
-        text = text.removeprefix(M_START).removesuffix(M_END).strip()
+        # text = remove_before(text, _THEND).strip()
+        text = text.removeprefix("```markdown").removesuffix("```").strip()
+        if not text: return
 
-        response = GeneratedArticle(raw=text)
-        lines = text.splitlines()
-
-        response.title = lines[0].removeprefix("# ").removeprefix("## ")
-        response.title = response.title.removeprefix(next((prefix for prefix in M_TITLE_PREFIX if response.title.startswith(prefix)), "")).strip()
+        fields = {k:[] for k in A_FIELDS}
         add_to = None
-        for line in lines[1:]:
+        for line in text.splitlines():
             line = line.strip()
+            if not line: continue
+            if line in A_FIELDS: add_to = line
+            elif add_to: fields[add_to].append(line)
 
-            if line in M_INTRODUCTION: add_to = M_INTRODUCTION
-            elif line in M_ANALYSIS: add_to = M_ANALYSIS
-            elif line in M_TAKEAWAYS: add_to = M_TAKEAWAYS
-            elif line in M_VERDICT: add_to = M_VERDICT
-            elif line in M_PREDICTION: add_to = M_PREDICTION
-            elif line in M_KEYWORDS: add_to = M_KEYWORDS
-            else: 
-                line = re.sub(r"(#+ )(.*?)(\n|$)", _replace_header_tag, line)
-
-                if add_to == M_INTRODUCTION: response.intro.append(line)
-                elif add_to == M_ANALYSIS: response.analysis.append(line)
-                elif add_to == M_TAKEAWAYS: response.insights.append(line)
-                elif add_to == M_VERDICT: response.verdict.append(line)
-                elif add_to == M_PREDICTION: response.predictions.append(line)
-                # keywords should only in one line. anything after the first line, do not do anything
-                elif add_to == M_KEYWORDS and not response.keywords: response.keywords = [kw.strip().removesuffix('.') for kw in line.split(',') if len(kw)<=30]
-
-        return response   
+        split_keywords = lambda line: [kw.strip().removesuffix('.') for kw in line.split(',') if len(kw)<=30]
+        chain_lines = lambda fnames: filter(lambda line: bool(line), chain(*(fields.get(fname) for fname in fnames)))
+        try:
+            return GeneratedArticle(
+                raw=text,
+                title=next(chain_lines(M_TITLE), ""),
+                intro="\n".join(chain_lines(M_INTRODUCTION)),
+                analysis=chain_lines(M_ANALYSIS),
+                insights=chain_lines(M_INSIGHTS),
+                verdict="\n".join(chain_lines(M_VERDICT)),
+                predictions=chain_lines(M_PREDICTION),
+                keywords=split_keywords(next(chain_lines(M_KEYWORDS), ""))
+            )  
+        except: print(text)
+            
 
 
 

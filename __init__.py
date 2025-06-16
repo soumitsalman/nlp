@@ -21,6 +21,8 @@ __all__ = [
     "NEWSRECAP_SYSTEM_PROMPT",
     "DIGEST_SYSTEM_PROMPT",
     "TOPICS_SYSTEM_PROMPT",
+    "NEWSRECAP_SYSTEM_PROMPT_JSON",
+    "OPINION_SYSTEM_PROMPT_JSON",
     "batch_run",
     "batch_truncate"
 ]  # Specify modules to be exported

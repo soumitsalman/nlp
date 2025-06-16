@@ -69,12 +69,12 @@ class Embeddings(ABC):
     def embed_query(self, query: str) -> list[float]:
         """Embeds a single string as a query. It prepends `query: ` to the input. 
         It processes the string without chunking or truncation for faster response."""
-        if query: return self._embed("query: "+query)        
+        if query: return self._embed("query: "+query).tolist()        
    
     def __call__(self, texts: str|list[str]):
         """This takes a string or an list of strings as an input.
         This calls the embedder directly without chunking or truncation for faster response"""
-        if texts: return self._embed(texts)
+        if texts: return self._embed(texts).tolist()
 
 
 # local embeddings from llama.cpp

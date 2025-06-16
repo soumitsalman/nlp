@@ -44,22 +44,19 @@ class RemoteClient(TextGenerationClient):
     openai_client = None
     model_name: str = None
     max_output_tokens: int = None
-    temperature: float = None
 
     def __init__(self, 
         model_name: str,
         base_url: str, 
         api_key: str,
         max_output_tokens: int,
-        temperature: float,
         json_mode: bool
     ):
         from openai import OpenAI
 
-        self.openai_client = OpenAI(api_key=api_key, base_url=base_url, timeout=180, max_retries=2)
+        self.openai_client = OpenAI(api_key=api_key, base_url=base_url, timeout=180, max_retries=3)
         self.model_name = model_name
         self.max_output_tokens = max_output_tokens
-        self.temperature = temperature
         self.json_mode = json_mode
 
     @retry(tries=2, delay=5, logger=log)
@@ -69,7 +66,6 @@ class RemoteClient(TextGenerationClient):
             model=self.model_name,
             max_completion_tokens=self.max_output_tokens,
             response_format={ "type": "json_object" } if self.json_mode else None,
-            temperature=self.temperature,
             seed=666
         ).choices[0].message.content
     
@@ -352,12 +348,11 @@ def from_path(
     max_output_tokens: int = None,
     system_prompt: str = None,
     output_parser: Callable = None,
-    temperature: float = DEFAULT_TEMPERATURE,
     json_mode: bool = False
 ) -> SimpleAgent:
     context_len = max_input_tokens+(len(system_prompt) if system_prompt else 0) # this is an approximation
-    if base_url: client = RemoteClient(model_path, base_url, api_key, max_output_tokens, temperature, json_mode)
-    elif model_path.startswith(LLAMACPP_PREFIX): client = LlamaCppClient(model_path.removeprefix(LLAMACPP_PREFIX), context_len, max_output_tokens, temperature, json_mode)
+    if base_url: client = RemoteClient(model_path, base_url, api_key, max_output_tokens, json_mode)
+    elif model_path.startswith(LLAMACPP_PREFIX): client = LlamaCppClient(model_path.removeprefix(LLAMACPP_PREFIX), context_len, max_output_tokens, json_mode)
     elif model_path.startswith(OPENVINO_PREFIX): client = OVClient(model_path.removeprefix(OPENVINO_PREFIX), context_len, max_output_tokens, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
     elif model_path.startswith(ONNX_PREFIX): client = ONNXClient(model_path.removeprefix(ONNX_PREFIX), context_len, max_output_tokens, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)
     else: client = TransformerClient(model_path, context_len, max_output_tokens, DEFAULT_RESPONSE_START, DEFAULT_RESPONSE_END)

@@ -26,24 +26,87 @@ INSTRUCTIONS:
 EXAMPLE_OUTPUT={"TopicTitle1":{"frequency":4,"keywords":["kw1","kw2"]},"TopicTitle2":{"frequency":2,"keywords":["kw3","kw4"]}}
 """
 
-OPINION_SYSTEM_PROMPT="""
-TASK:INPUT=Topic:String,Articles:List<ArticleString>;ArticleString=Format<U:YYYY-MM-DD;P:Summary|...;N:Entities|...;E:Events|...;C:Categories|...;S:Sentiment|...>;OUTPUT=OpinionPiece:Markdown;"
-INSTRUCTIONS:
-1=AnalyzeArticles;UseFields=P,N,E,S;Identify=Patterns,Themes,Insights;Grounding=Normative,MultiArticle;Focus=TopicRelevance;
-2=GenerateOpinionPiece;Structure=Introduction,Analysis,Takeaways,Verdict;Introduction=Context,TopicOverview;Analysis=SynthesizePatterns,ReportEntitiesEvents,PresentSentiment;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Length=400-600Words;Avoid=Speculation,Narrative,EmotiveLanguage;VerdictLength=10-20Words;
-3=OutputFormat=Markdown;Sections=#Introduction,##Analysis,##KeyTakeaways,##Verdict;Include=TopicInTitle;
-EXAMPLE_OUTPUT=# Title\n## Introduction\nContext...\n## Analysis\nPatterns...\n## KeyTakeaways\n- Insight1\n- Insight2\n## Verdict\nSummary...
+# OPINION_SYSTEM_PROMPT="""
+# TASK:INPUT=Topic:String,Articles:List<ArticleString>;ArticleString=Format<U:YYYY-MM-DD;P:Summary|...;N:Entities|...;E:Events|...;C:Categories|...;S:Sentiment|...>;OUTPUT=OpinionPiece:Markdown;"
+# INSTRUCTIONS:
+# 1=AnalyzeArticles;UseFields=P,N,E,S;Identify=Patterns,Themes,Insights;Grounding=Normative,MultiArticle;Focus=TopicRelevance;
+# 2=GenerateOpinionPiece;Structure=Introduction,Analysis,Takeaways,Verdict;Introduction=Context,TopicOverview;Analysis=SynthesizePatterns,ReportEntitiesEvents,PresentSentiment;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Length=400-600Words;Avoid=Speculation,Narrative,EmotiveLanguage;VerdictLength=10-20Words;
+# 3=OutputFormat=Markdown;Sections=#Introduction,##Analysis,##KeyTakeaways,##Verdict;Include=TopicInTitle;
+# EXAMPLE_OUTPUT=# Title\n## Introduction\nContext...\n## Analysis\nPatterns...\n## KeyTakeaways\n- Insight1\n- Insight2\n## Verdict\nSummary...
+# """
+
+OPINION_SYSTEM_PROMPT = """
+TASK:WriteOpinionPiece;
+INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
+OUTPUT=Analysis,Takeaways,Verdict,Title,Keywords;
+STEPS:
+1.AnalyzeDatastreams;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
+2.GenerateOpinionPiece=Analysis,Takeaways,Verdict;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;
+3.GenerateSynthesis=Title,Keywords;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
+4.RefineOutput;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Keywords=CommaSeparated;
+EXAMPLE_OUTPUT=## Title\nWhoDidWhatToWhomInWhere...\n## Analysis\nPatterns...\n## Takeaways\n- Insight1\n- Insight2...\n## Verdict\nSummary...\n## Keywords\nkw1,kw2,...
 """
 
 NEWSRECAP_SYSTEM_PROMPT = """
-TASK:Create IntelligenceBriefing;
-INPUT=List<Report>;Report=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
-OUTPUT=Markdown;# Title,## Analysis,## KeyDatapoints,## Verdict,## Predictions,## Keywords;
-INSTRUCTIONS:
-1=DetermineProminentTopicAndTimeline;IncludeTopicRelevantReports;DiscardIrrelevantReports;
-2=AnalyzeReport;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights,DataTrends;Grounding=Normative,MultiNews;
-3=GenerateOutput;Structure=Analysis,Datapoints,Verdict,Predictions,Keywords,Title;Analysis=SynthesizePatterns,ReportEntitiesEvents,PresentSentiment;Datapoints=KeyData,Implications;Verdict=TechnicalSummary;Predictions=PotentialFutureOutcomesOfContinuingPattern;Keywords=People,Organizations,GeographicRegions;Title=FocusEmphasize[Who,What,Where]
-4=RefineOutput;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Tone=DrySarcastic;
-EXAMPLE_OUTPUT=# Title...\n## Analysis\nObservablePatterns...\n## Key Datapoints\n- Datapoint 1\n- Datapoint 2...\n## Verdict\nSummaryVerdict...\n## Predictions\n- Potential Outcome 1 1\n- Potential Outcome 2\n## Keywords\nkw1,kw2,...
+TASK:WriteIntelligenceBriefing;
+INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
+OUTPUT=Analysis,Datapoints,Predictions,Verdict,Title,Keywords;
+STEPS:
+1.AnalyzeDatastreams;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights,DataTrends;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
+2.GenerateIntelligenceBriefing=Analysis,Datapoints,Predictions;Analysis=SynthesizePatterns,ReportEntitiesEvents,SentimentTrend;Datapoints=KeyData,EmergingTrends,Implications;Predictions=PotentialFutureOutcomesOfContinuingPattern;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=DrySarcastic;
+3.GenerateSynthesis=Verdict,Title,Keywords;Verdict=TechnicalSummary;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
+4.RefineOutput;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Keywords=CommaSeparated;
+EXAMPLE_OUTPUT=## Title\nWhoDidWhatToWhomInWhere...\n## Analysis\nObservablePatterns...\n## Datapoints\n- KeyData 1\n- KeyData 2...\n## Verdict\nSummaryVerdict...\n## Predictions\n- Potential Outcome 1 1\n- Potential Outcome 2\n## Keywords\nkw1,kw2,...
 """
 
+OPINION_SYSTEM_PROMPT_JSON = """
+TASK:WriteOpinionPiece;
+INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
+OUTPUT_FORMAT=JSON;
+{
+    "title": string,
+    "analysis": list<string>,
+    "takeaways": list<string>,
+    "verdict": string,
+    "keywords": list<string>
+}
+STEPS:
+1.AnalyzeDatastreams;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
+2.GenerateOpinionPiece=Analysis,Takeaways,Verdict;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;AnalysisLength=300-400Words;TakawaysLength=100-200Words;VerdictLength=50-70Words;
+3.GenerateSynthesis=Title,Keywords;Title=Highlight[Who,Action,What,Object,Where];TitleLength=10-20Words;Keywords=People,Organizations,GeographicRegions;
+EXAMPLE_OUTPUT:
+{
+    "title": "Title",
+    "analysis": ["Analysis", "Analysis2"],
+    "takeaways": ["Insight1", "Insight2"],
+    "verdict": "Summary",
+    "keywords": ["kw1", "kw2"]
+}
+"""
+
+NEWSRECAP_SYSTEM_PROMPT_JSON = """
+TASK:WriteIntelligenceBriefing;
+INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
+OUTPUT_FORMAT=JSON;
+{
+    "title": string,
+    "analysis": list<string>,
+    "datapoints": list<string>,
+    "verdict": string,
+    "predictions": list<string>,
+    "keywords": list<string>
+}
+STEPS:
+1.AnalyzeDatastreams;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights,DataTrends;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
+2.GenerateIntelligenceBriefing=Analysis,Datapoints,Predictions;Analysis=SynthesizePatterns,ReportEntitiesEvents,PresentSentiment;Datapoints=KeyData,EmergingTrends,Implications;Predictions=PotentialFutureOutcomesOfContinuingPattern;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=DrySarcastic;AnalysisLength=300-400Words;DatapointsLength=100-200Words;
+3.GenerateSynthesis=Verdict,Title,Keywords;Verdict=TechnicalSummary;Title=Highlight[Who,Action,What,Object,Where];VerdictLength=50-70Words;TitleLength=10-20Words;Keywords=People,Organizations,GeographicRegions;
+EXAMPLE_OUTPUT:
+{
+    "title": "Title",
+    "analysis": ["Analysis", "Analysis2"],
+    "datapoints": ["Datapoint1", "Datapoint2"],
+    "verdict": "SummaryVerdict",
+    "predictions": ["PotentialOutcome1", "PotentialOutcome2"],
+    "keywords": ["kw1", "kw2"]
+}
+"""
