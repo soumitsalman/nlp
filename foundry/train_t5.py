@@ -16,12 +16,13 @@ load_dotenv()
 SOURCE_MODEL_ID = os.getenv('SOURCE_MODEL_ID', "google/long-t5-tglobal-base")
 TRAINED_MODEL_ID = os.getenv('TRAINED_MODEL_ID', "soumitsr/long-t5-sm-article-digestor")
 DATASET_ID = os.getenv('DATASET_ID', "./foundry/.dataset")
-TRAIN_BATCH_SIZE = int(os.getenv('TRAIN_BATCH_SIZE', 1))
-EVAL_BATCH_SIZE = int(os.getenv('EVAL_BATCH_SIZE', 1))
-GRAD_ACCUM_STEPS = int(os.getenv('GRAD_ACCUM_STEPS', 2))
+TRAIN_BATCH_SIZE = int(os.getenv('TRAIN_BATCH_SIZE', 16))
+EVAL_BATCH_SIZE = int(os.getenv('EVAL_BATCH_SIZE', 16))
+GRAD_ACCUM_STEPS = int(os.getenv('GRAD_ACCUM_STEPS', 32))
 NUM_EPOCHS = int(os.getenv('NUM_EPOCHS', '1'))
-MAX_STEPS = 3 # Optional[int](os.getenv('MAX_STEPS'))  # None means train for full epochs
+# MAX_STEPS = 3 # Optional[int](os.getenv('MAX_STEPS'))  # None means train for full epochs
 LEARNING_RATE = float(os.getenv('LEARNING_RATE', 2e-3))
+OUTPUT_DIR = "./.outputs"
 
 def load_model(model_id: str):
     # 1. Load Model and Tokenizer
@@ -57,7 +58,7 @@ def prepare_dataset(dataset, tokenizer):
     tokenized_dataset = dataset.map(
         tokenize_data, 
         batched=True, 
-        num_proc=os.cpu_count(),
+        num_proc=TRAIN_BATCH_SIZE,
         remove_columns=["input", "output"]
     )
     tokenized_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
@@ -73,19 +74,21 @@ def train_model(model: AutoModelForSeq2SeqLM, tokenizer, training_data, eval_dat
         per_device_eval_batch_size=EVAL_BATCH_SIZE,
         gradient_accumulation_steps=GRAD_ACCUM_STEPS,  # Effective batch size = 1 * 8 = 8
         num_train_epochs=NUM_EPOCHS,
-        max_steps=MAX_STEPS,
         learning_rate=LEARNING_RATE,
         fp16=True,  # Mixed precision for speed
         gradient_checkpointing=True,  # Save memory
-        # evaluation_strategy="epoch",
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
-        logging_steps=100,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
-        output_dir="./.output",
-        report_to="none"
+        output_dir=OUTPUT_DIR,
+        logging_strategy="steps",
+        logging_steps=1,
+        logging_first_step=True,
+        logging_dir=f"{OUTPUT_DIR}/logs",
+        disable_tqdm=False,
+        report_to="tensorboard"
     )
 
     # 6. Initialize Trainer
@@ -103,7 +106,7 @@ def train_model(model: AutoModelForSeq2SeqLM, tokenizer, training_data, eval_dat
 
 def save_model(model: AutoModelForSeq2SeqLM, tokenizer, model_id: str):
     # 8. Save Fine-Tuned Model
-    local_path = f"./.output/{model_id}"
+    local_path = f"{OUTPUT_DIR}/{model_id}"
     os.makedirs(local_path, exist_ok=True)
     model.save_pretrained(local_path)
     tokenizer.save_pretrained(local_path)
@@ -111,7 +114,7 @@ def save_model(model: AutoModelForSeq2SeqLM, tokenizer, model_id: str):
     tokenizer.push_to_hub(model_id)
 
 def run_training():
-    dataset = load_dataset(DATASET_ID, split="train", num_proc=os.cpu_count()).select(range(100))
+    dataset = load_dataset(DATASET_ID, split="train", num_proc=TRAIN_BATCH_SIZE)
     model, tok = load_model(SOURCE_MODEL_ID)
     tr_data, eval_data = prepare_dataset(dataset, tok)
     model, tok = train_model(model, tok, tr_data, eval_data)
