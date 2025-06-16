@@ -327,7 +327,8 @@ def port_training_data_from_prod():
         "gist": { 
             "$exists": True,
             "$regex": re.compile(r'^[UP]:')
-        }
+        },
+        "collected": {"$gte": datetime.now() - timedelta(days=4)}
     }
     projection = {"_id": 1, "gist": 1, "content": 1, "entities": 1, "regions": 1}    
 
@@ -351,7 +352,7 @@ def port_training_data_from_prod():
         ic(skip)
        
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-        executor.map(port, range(0, 449000, BATCH_SIZE))
+        executor.map(port, range(0, prod.beans.count_documents(filter=filter), BATCH_SIZE))
 
 # nuner_model = None
 def load_gliner_model(model_name = "numind/NuNerZero_span"):
@@ -451,11 +452,6 @@ def clean_compressed_digests_in_training_data():
     for bean in beans:
         bean['gist_v2'] = clean_compressed_digest(bean.get('gist_v2') or bean.get('gist'))
         bean['ped_digest'] = clean_compressed_digest(bean['ped_digest'])
-    # def clean_chunk(start: int):
-    #     beans = list(db.beans.find(filter=FILTER, skip=start, limit=BATCH_SIZE, projection=PROJECT))
-        # for bean in beans:
-        #     bean['gist_v2'] = clean_compressed_digest(bean.get('gist_v2') or bean.get('gist'))
-        #     bean['ped_digest'] = clean_compressed_digest(bean['ped_digest'])
     
     db.beans.bulk_write(
         [
@@ -504,30 +500,16 @@ def create_data_from_compressed_digests():
     )
     
 def create_dataset_from_compressed_digests():
-    # FILTER = {
-    #     'gist_v2': { "$exists": True }
-    # }
-    # PROJECT = {
-    #     "_id": 1,
-    #     "content": 1,    
-    #     "gist_v2": 1        
-    # }
-
-    # db = MongoClient("mongodb://localhost:27017/")["trainingdata"]
-    # beans = list(db.beans.find(filter=FILTER, projection=PROJECT))
-    # for bean in beans:
-    #     bean['input'] = bean.pop('content')
-    #     bean['output'] = bean.pop('gist')
     beans = utils.load_data_from_directory("./foundry/data/compressed-digests/*.json")
     beans = list(map(lambda bean: {'input': bean['content'], 'output': bean['gist']}, beans))
     ic(len(beans))
     save_jsonl_to_directory(beans, "./foundry/.dataset", "dataset")
 
 if __name__ == "__main__":
-    # torch.cuda.empty_cache()
-    # torch.cuda.ipc_collect() 
-    # clean_compressed_digests_in_training_data()
-    # create_data_from_compressed_digests()
+    # port_training_data_from_prod()
+    # fix_names_and_regions_in_training_data()
+    clean_compressed_digests_in_training_data()
+    create_data_from_compressed_digests()
     create_dataset_from_compressed_digests()
     # digests = [
     #     "P:Capital One miles can be redeemed for gift cards and cash back, but travel redemptions offer the most value;5 best ways to use Capital One Miles: Flights, Hotels, Other Travel Rewards, Cash Back, Gift Cards;Transferring miles to travel partners can yield more value than standard redemption rates;Capital One occasionally offers transfer bonuses to travel partners;Redeeming miles for cash back, gift cards, online shopping, or experiences typically yields less value than travel redemptions;Capital One miles transfer at a one-to-one ratio to most hotel and airline partners;E:Capital One updated fact-checking process;Ben Walker, CEPF, CFEI® authored the article;Mindy Woodall edited the article;Article updated June 6, 2025;Capital One miles can be used for flights, hotels, and car rentals;Amusement park tickets may be redeemable as travel through third-party sites like Undercover Tourist;D:Standard Capital One Travel redemption value is $0.01 per mile;Business class flight from New York to Paris costs $4,286.31 or 259,000 miles;Wyndham-Vacasa partnership charges 15,000 or 30,000 points per bedroom per night;Cash back redemption rate is 0.5 cent per mile;Gift card redemption rates range from 0.8 to 1 cent per mile;Capital One Venture Rewards Credit Card offers a 75,000 miles welcome bonus;Capital One Venture X Rewards Credit Card offers a $300 Capital One Travel credit annually;Paris;New York;Wyndham;Vacasa;Airbnb;VRBO;Universal Studios;Disneyland;Amazon;Apple;British Airways;Air Canada;Air France KLM;TAP Air Portugal;Singapore Airlines;JetBlue;Emirates;Qantas;EVA Air;Virgin Red;Accor;Choice;Turkish Airlines;Cathay Pacific;Finnair;Avianca;Ben Walker;Mindy Woodall;Capital One Travel;Expedia;Priceline;Air Canada;Air France KLM;British Airways;Wyndham Rewards;Undercover Tourist;Bank of America;N:Mindy Woodall|Ben Walker;R:Paris;",
@@ -536,8 +518,8 @@ if __name__ == "__main__":
     # ]   
     # list(map(clean_compressed_digest, digests))
     
-    # fix_names_and_regions_in_training_data()
-    # port_training_data_from_prod()
+    
+   
     # download_raw_data(100000, "raw_data")
     # asyncio.run(run_generate_extracts_async(".raw_data/raw-*.json", ".generated", ".extracts"))
     # asyncio.run(run_generate_summaries_async("raw_data/raw-*.json", ".generated", "summaries"))

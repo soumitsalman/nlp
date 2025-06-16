@@ -15,7 +15,7 @@ load_dotenv()
 
 SOURCE_MODEL_ID = os.getenv('SOURCE_MODEL_ID', "google/long-t5-tglobal-base")
 TRAINED_MODEL_ID = os.getenv('TRAINED_MODEL_ID', "soumitsr/long-t5-sm-article-digestor")
-DATASET_ID = os.getenv('DATASET_ID', "/home/soumitsr/codes/pycoffeemaker/coffeemaker/nlp/foundry/.dataset")
+DATASET_ID = os.getenv('DATASET_ID', "./foundry/.dataset")
 TRAIN_BATCH_SIZE = int(os.getenv('TRAIN_BATCH_SIZE', 1))
 EVAL_BATCH_SIZE = int(os.getenv('EVAL_BATCH_SIZE', 1))
 GRAD_ACCUM_STEPS = int(os.getenv('GRAD_ACCUM_STEPS', 2))
@@ -26,7 +26,7 @@ LEARNING_RATE = float(os.getenv('LEARNING_RATE', 2e-3))
 def load_model(model_id: str):
     # 1. Load Model and Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_id, use_cache=False)
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     return model, tokenizer
