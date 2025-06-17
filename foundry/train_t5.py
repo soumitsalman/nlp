@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 from datasets import load_dataset
+from evaluate import load
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -15,93 +16,92 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SOURCE_MODEL_ID = os.getenv('SOURCE_MODEL_ID', "google/long-t5-tglobal-base")
-TRAINED_MODEL_ID = os.getenv('TRAINED_MODEL_ID', "soumitsr/long-t5-sm-article-digestor")
+TRAINED_MODEL_ID = os.getenv('TRAINED_MODEL_ID', "soumitsr/long-t5-base-article-digestor")
 DATASET_ID = os.getenv('DATASET_ID', "./foundry/.dataset")
-TRAIN_BATCH_SIZE = int(os.getenv('TRAIN_BATCH_SIZE', 16))
-EVAL_BATCH_SIZE = int(os.getenv('EVAL_BATCH_SIZE', 16))
-GRAD_ACCUM_STEPS = int(os.getenv('GRAD_ACCUM_STEPS', 32))
+TRAIN_BATCH_SIZE = int(os.getenv('TRAIN_BATCH_SIZE', 2))
+EVAL_BATCH_SIZE = int(os.getenv('EVAL_BATCH_SIZE', 2))
+GRAD_ACCUM_STEPS = int(os.getenv('GRAD_ACCUM_STEPS', 8))
 NUM_EPOCHS = int(os.getenv('NUM_EPOCHS', '1'))
-# MAX_STEPS = 3 # Optional[int](os.getenv('MAX_STEPS'))  # None means train for full epochs
-LEARNING_RATE = float(os.getenv('LEARNING_RATE', 2e-3))
+LEARNING_RATE = float(os.getenv('LEARNING_RATE', 2e-4))
 OUTPUT_DIR = "./.outputs"
 
 def load_model(model_id: str):
-    # 1. Load Model and Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_id, use_cache=False)
-    # Enable gradient checkpointing for memory efficiency
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
     model.gradient_checkpointing_enable()
     return model, tokenizer
 
 def prepare_dataset(dataset, tokenizer):
-    # 3. Preprocess Dataset
     def tokenize_data(examples):
         inputs = tokenizer(
             ["summarize: " + inp for inp in examples["input"]],
-            max_length=5000,  # Long-T5 supports up to 16384, but we use 4096
+            max_length=5000,
             truncation=True,
-            padding=True,
-            return_tensors="np",
+            padding="max_length",
+            return_tensors="pt",
         )
         outputs = tokenizer(
             examples["output"],
-            max_length=512,  # Factoids are short
+            max_length=512,
             truncation=True,
-            padding=True,
-            return_tensors="np",
+            padding="max_length",
+            return_tensors="pt",
         )
         return {
-            "input_ids": np.asarray(inputs["input_ids"].squeeze(), dtype=np.int64),
-            "attention_mask": np.asarray(inputs["attention_mask"].squeeze(), dtype=np.int64),
-            "labels": np.asarray(outputs["input_ids"].squeeze(), dtype=np.int64)
+            "input_ids": inputs["input_ids"].squeeze(),
+            "attention_mask": inputs["attention_mask"].squeeze(),
+            "labels": outputs["input_ids"].squeeze(),
         }
 
     tokenized_dataset = dataset.map(
-        tokenize_data, 
-        batched=True, 
-        num_proc=TRAIN_BATCH_SIZE,
-        remove_columns=["input", "output"]
+        tokenize_data,
+        batched=True,
+        num_proc=os.cpu_count(),  # Reduced from TRAIN_BATCH_SIZE
+        remove_columns=["input", "output"],
     )
     tokenized_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
-
-    # Split dataset (80% train, 20% validation)
     train_val_split = tokenized_dataset.train_test_split(test_size=0.1)
     return train_val_split["train"], train_val_split["test"]
 
 def train_model(model: AutoModelForSeq2SeqLM, tokenizer, training_data, eval_data):
-    # 5. Training Arguments
+    rouge = load("rouge")
+    def compute_metrics(eval_pred):
+        predictions, labels = eval_pred
+        decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+        return rouge.compute(predictions=decoded_preds, references=decoded_labels)
+
     training_args = TrainingArguments(
-        per_device_train_batch_size=TRAIN_BATCH_SIZE,  # Small batch size for long sequences
+        per_device_train_batch_size=TRAIN_BATCH_SIZE,
         per_device_eval_batch_size=EVAL_BATCH_SIZE,
-        gradient_accumulation_steps=GRAD_ACCUM_STEPS,  # Effective batch size = 1 * 8 = 8
+        gradient_accumulation_steps=GRAD_ACCUM_STEPS,
         num_train_epochs=NUM_EPOCHS,
         learning_rate=LEARNING_RATE,
-        fp16=True,  # Mixed precision for speed
-        gradient_checkpointing=True,  # Save memory
+        fp16=True,
+        gradient_checkpointing=True,
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
+        metric_for_best_model="rouge1",
         output_dir=OUTPUT_DIR,
         logging_strategy="steps",
-        logging_steps=1,
+        logging_steps=100,
         logging_first_step=True,
         logging_dir=f"{OUTPUT_DIR}/logs",
         disable_tqdm=False,
-        report_to="tensorboard"
+        report_to="tensorboard",
     )
 
-    # 6. Initialize Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=training_data,
         eval_dataset=eval_data,
-        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding=True)
+        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding=True),
+        compute_metrics=compute_metrics,
     )
 
-    # 7. Fine-Tune Model
     trainer.train()
     return model, tokenizer
 
@@ -115,7 +115,7 @@ def save_model(model: AutoModelForSeq2SeqLM, tokenizer, model_id: str):
     tokenizer.push_to_hub(model_id)
 
 def run_training():
-    dataset = load_dataset(DATASET_ID, split="train", num_proc=TRAIN_BATCH_SIZE)
+    dataset = load_dataset(DATASET_ID, split="train", num_proc=os.cpu_count()).select(range(20000))
     model, tok = load_model(SOURCE_MODEL_ID)
     tr_data, eval_data = prepare_dataset(dataset, tok)
     model, tok = train_model(model, tok, tr_data, eval_data)

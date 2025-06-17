@@ -11,3 +11,4 @@ azure-storage-blob
 pymongo
 gliner
 tensorboard
+evaluate
