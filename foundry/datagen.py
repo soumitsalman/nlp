@@ -500,10 +500,11 @@ def create_data_from_compressed_digests():
     )
     
 def create_dataset_from_compressed_digests():
-    beans = utils.load_data_from_directory("./foundry/data/compressed-digests/*.json")
-    beans = list(map(lambda bean: {'input': bean['content'], 'output': bean['gist']}, beans))
+    cur_dir = ic(os.path.dirname(os.path.abspath(__file__)))
+    beans = utils.load_data_from_directory(cur_dir+"/data/compressed-digests/*.json")
+    beans = list(map(lambda bean: {'article': bean['content'], 'summary': bean['gist']}, beans))
     ic(len(beans))
-    save_jsonl_to_directory(beans, "./foundry/.dataset", "dataset")
+    save_jsonl_to_directory(beans, cur_dir+"/.dataset", "dataset")
 
 if __name__ == "__main__":
     # port_training_data_from_prod()
@@ -517,8 +518,6 @@ if __name__ == "__main__":
     #     """P:Costco shopping tips;P:Smart spending;P:Bulk buying;P:Pantry staples;P:Rewards card;E:Article update;E:Fact-checking process;E:Card application;E:Savings on groceries;E:Summer deals;E:Father's Day promotions;D:2% cash rewards;D:$200 cash bonus;D:0% intro APR;D:$14.99 (Goldfish Crackers);D:$15.99 (Kirkland Trail Mix);D:$13.39 (Kirkland Pizza);D:$17.99 (Kirkland Tuna);D:$14.99 (Seeds of Change Quinoa);D:$6.19 (Cosmic Crisp Apples);D:$5.84 (Rotisserie Chicken);D:$11.99 (Kirkland Shampoo);N:Goldfish Crackers|Jenny Cohen|Costco|Sara Albertelli;R:United States;"""
     # ]   
     # list(map(clean_compressed_digest, digests))
-    
-    
    
     # download_raw_data(100000, "raw_data")
     # asyncio.run(run_generate_extracts_async(".raw_data/raw-*.json", ".generated", ".extracts"))

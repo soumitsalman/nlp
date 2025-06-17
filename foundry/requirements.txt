@@ -12,3 +12,4 @@ pymongo
 gliner
 tensorboard
 evaluate
+rouge_score
