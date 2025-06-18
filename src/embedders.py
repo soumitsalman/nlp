@@ -69,7 +69,9 @@ class Embeddings(ABC):
     def embed_query(self, query: str) -> list[float]:
         """Embeds a single string as a query. It prepends `query: ` to the input. 
         It processes the string without chunking or truncation for faster response."""
-        if query: return self._embed("query: "+query).tolist()        
+        if not query: return
+        vec = self._embed("query: "+query)
+        return vec if isinstance(vec, list) else vec.tolist()        
    
     def __call__(self, texts: str|list[str]):
         """This takes a string or an list of strings as an input.
