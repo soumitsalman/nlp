@@ -3,7 +3,7 @@ from .src.embedders import *
 from .src.agents import *
 from .src.models import *
 from .src.prompts import *
-from .src.utils import batch_run, batch_truncate
+from .src.utils import run_batch, truncate_batch
 
 __all__ = [
     'embedders', 
@@ -14,7 +14,8 @@ __all__ = [
     "OVEmbeddings",
     "ORTEmbeddings",
     "LlamaCppEmbeddings",
-    "SimpleAgent",
+    "SimpleTextGenerationAgent",
+    "SimpleTaskAgent"
     "Digest",
     "GeneratedArticle",
     "OPINION_SYSTEM_PROMPT",
@@ -23,6 +24,6 @@ __all__ = [
     "TOPICS_SYSTEM_PROMPT",
     "NEWSRECAP_SYSTEM_PROMPT_JSON",
     "OPINION_SYSTEM_PROMPT_JSON",
-    "batch_run",
-    "batch_truncate"
+    "run_batch",
+    "truncate_batch"
 ]  # Specify modules to be exported

@@ -1,4 +1,7 @@
 sentence-transformers
+transformers
+optimum
+accelerate
 openai
 llama-index
 tiktoken

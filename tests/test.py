@@ -70,7 +70,7 @@ def test_digestor():
         json_mode=False
     )
     inputs = load_json("./tests/texts-for-nlp.json")
-    responses = utils.batch_run(digestor.run, random.sample([b['content'] for b in inputs], 5))
+    responses = utils.run_batch(digestor.run, random.sample([b['content'] for b in inputs], 5))
     [ic(r) for r in responses]
 
 def test_digest_parser():
@@ -164,8 +164,8 @@ def test_digestor_perf():
     from tqdm import tqdm
     from src import prompts, agents, models, utils
 
-    BATCH_SIZE = 3
-    data = load_json("./tests/texts-for-nlp.json")[:24]
+    BATCH_SIZE = 2
+    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
 
     model_paths = [
         # "openvino:///home/soumitsr/codes/pycoffeemaker/.models/SmolLM2-135M-Instruct-openvino", 
@@ -173,9 +173,9 @@ def test_digestor_perf():
         # "HuggingFaceTB/SmolLM2-135M-Instruct",
         # "HuggingFaceTB/SmolLM2-360M-Instruct",
         # "google/long-t5-local-base",
-        "google/long-t5-tglobal-base",
+        "soumitsr/led-base-article-digestor",
         # "openvino:///home/soumitsr/codes/pycoffeemaker/.models/long-t5-local-base-openvino",
-        "openvino:///home/soumitsr/codes/pycoffeemaker/.models/long-t5-tglobal-base-openvino"
+        # "openvino:///home/soumitsr/codes/pycoffeemaker/.models/long-t5-tglobal-base-openvino"
 
     ]
     for path in model_paths:
@@ -183,14 +183,14 @@ def test_digestor_perf():
         digestor = agents.from_path(
             model_path=path,
             max_input_tokens=4096,
-            max_output_tokens=384,
-            system_prompt="summarize: "
+            max_output_tokens=400,
+            output_parser=models.Digest.parse_compressed
         )
         print("=========", path, "===========")
         with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
             for i in range(0, len(data), BATCH_SIZE):
                 items = [d['content'] for d in data[i:i+BATCH_SIZE]]
-                [ic(r[:100]) for r in digestor.run_batch(items)]
+                [ic(r) for r in digestor.run_batch(items)]
                 pbar.update(len(items))
 
 
@@ -199,6 +199,6 @@ if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
     # test_digestor()
-    # test_digestor_perf()
-    test_digest_parser()
+    test_digestor_perf()
+    # test_digest_parser()
    

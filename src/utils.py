@@ -44,12 +44,12 @@ _ALLOWED_SPECIAL_TOKENS = {
     "<|human|>"
 }
 
-def batch_truncate(input_texts: list[str], n_ctx):
+def truncate_batch(input_texts: list[str], n_ctx):
     tokenlist = _encoding.encode_batch(input_texts, num_threads=os.cpu_count(), allowed_special=_ALLOWED_SPECIAL_TOKENS)
     tokenlist = [tokens[:n_ctx] for tokens in tokenlist]
     return _encoding.decode_batch(tokenlist, num_threads=os.cpu_count())
 
-def batch_run(func: Callable, items, num_threads: int = os.cpu_count()):
+def run_batch(func: Callable, items, num_threads: int = os.cpu_count()):
     results = None
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         results = list(executor.map(func, items))
