@@ -1,3 +1,4 @@
+import base64
 import os
 import logging
 from typing import Callable
@@ -332,6 +333,42 @@ class SimpleTextGenerationAgent:
         responses = self.client.run_batch(prompts)
         if self.output_parser: return run_batch(self.output_parser, responses, BATCH_SIZE)
         return responses
+    
+class SimpleImageGenerationAgent:
+    model_name = None
+    client = None
+    system_prompt = None
+    output_processor = None
+
+    def __init__(self, model_name: str, base_url: str, api_key: str, system_prompt: str = None, output_processor: Callable = None):
+        from openai import OpenAI
+        self.model_name = model_name
+        self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=30)
+        self.system_prompt = system_prompt
+        self.output_processor = output_processor or (lambda x: x)
+
+    def _make_prompt(self, input_msg: str|list[str]):
+        input_msg = input_msg if isinstance(input_msg, str) else ", ".join(input_msg)
+        if self.system_prompt: return self.system_prompt.format(user_input = input_msg)
+        return input_msg
+    
+    def run(self, input_msg):
+        response = self.client.images.generate(
+            model=self.model_name,
+            prompt=self._make_prompt(input_msg),
+            n=2,
+            size="256x256",
+            output_format="png",
+            style="vivid",
+            quality="high",
+            response_format="b64_json"
+        )
+        return self.output_processor(base64.b64decode(response.data[0].b64_json))
+    
+    def run_batch(self, input_msgs: list):
+        return run_batch(self.run, input_msgs)
+
+
 
 def from_path(
     model_path: str,

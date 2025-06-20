@@ -11,22 +11,30 @@ load_dotenv()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.makedirs(".test", exist_ok=True)
 
-def url_to_filename(url: str) -> str:
-    return "./.test/" + re.sub(r'[^a-zA-Z0-9]', '-', url)
+def to_filename(name: str) -> str:
+    return "./.test/" + re.sub(r'[^a-zA-Z0-9]', '-', str(name))
 
 def load_json(filename):
     with open(filename, 'r') as file:
         return json.load(file)
 
 def save_markdown(url, markdown):
-    filename = url_to_filename(url)+".md"
+    filename = to_filename(url)+".md"
     with open(filename, 'w') as file:
         file.write(markdown)
+    return os.path.abspath(filename)
 
 def save_json(url, items):
-    filename = url_to_filename(url)+".json"
+    filename = to_filename(url)+".json"
     with open(filename, 'w') as file:
         json.dump(items, file)
+    return os.path.abspath(filename)
+
+def save_image(tags, image_data):
+    filename = to_filename(tags)+".png"
+    with open(filename, "wb") as file:
+        file.write(image_data)
+    return os.path.abspath(filename)
 
 def test_embedder():
     from src.embedders import TransformerEmbeddings, OVEmbeddings, ORTEmbeddings
@@ -193,12 +201,87 @@ def test_digestor_perf():
                 [ic(r) for r in digestor.run_batch(items)]
                 pbar.update(len(items))
 
+def test_image_generator():
+    from src import SimpleImageGenerationAgent, BANNER_IMAGE_SYSTEM_PROMPT
+    banner_agent = SimpleImageGenerationAgent(
+        "run-diffusion/Juggernaut-Flux",
+        os.getenv('DEEPINFRA_BASE_URL'),
+        os.getenv('DEEPINFRA_API_KEY'),
+        BANNER_IMAGE_SYSTEM_PROMPT        
+    )
+    input_tags = [
+        [
+            "cloud computing",
+            "artificial vision",
+            "virtual and augmented reality",
+            "galmoz fold 7",
+            "motorola razr series",
+            "galon z fold 5",
+            "google ai pro subscription",
+            "galia z fold 6",
+            "galium z flip7",
+            "snapdragon",
+            "android headlines",
+            "samsung galaxy watch ecosystems",
+            "razr series",
+            "galooza8",
+            "galaxi",
+            "galio9",
+            "samsung",
+            "jacket",
+            "lenovo",
+            "galrox",
+            "galox",
+            "galaxies"
+        ],
+        [
+            "the legend of zelda: breath of the wild",
+            "pcie",
+            "pokemon",
+            "uk",
+            "playstation",
+            "nintendo switch ac adapter",
+            "nintendo switch 2",
+            "pokémon player",
+            "us",
+            "mario kart",
+            "japan",
+            "parks and recreation",
+            "virtual and augmented reality",
+            "esports and gaming"
+        ],
+        [
+            "medical record numbers",
+            "medicaid-medicare-government payor id numbers",
+            "insurance companies",
+            "median-medicare-government payor id number",
+            "us department of health and human services office for civil rights",
+            "phishing",
+            "doctor/diagnosis",
+            "techradar pro",
+            "episource",
+            "doctors",
+            "physicians",
+            "bleepingcomputer",
+            "criminals",
+            "health plans/policies",
+            "patient/group id numbers",
+            "united states",
+            "social security numbers (ssns)",
+            "artificial intelligence safety",
+            "insurance",
+            "cybersecurity and cybercrime"
+        ]
+    ]
+    for tags in input_tags:
+        print(save_image(f"{int(datetime.now().timestamp())}-{random.randint(1000, 2000)}", banner_agent.run(tags)))
 
 
 if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
     # test_digestor()
-    test_digestor_perf()
+    # test_digestor_perf()
     # test_digest_parser()
+    test_image_generator()
    

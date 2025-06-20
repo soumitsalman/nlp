@@ -14,8 +14,9 @@ __all__ = [
     "OVEmbeddings",
     "ORTEmbeddings",
     "LlamaCppEmbeddings",
+    "SimpleTaskAgent",
     "SimpleTextGenerationAgent",
-    "SimpleTaskAgent"
+    "SimpleImageGenerationAgent",
     "Digest",
     "GeneratedArticle",
     "OPINION_SYSTEM_PROMPT",
@@ -24,6 +25,7 @@ __all__ = [
     "TOPICS_SYSTEM_PROMPT",
     "NEWSRECAP_SYSTEM_PROMPT_JSON",
     "OPINION_SYSTEM_PROMPT_JSON",
+    "BANNER_IMAGE_SYSTEM_PROMPT",
     "run_batch",
     "truncate_batch"
 ]  # Specify modules to be exported

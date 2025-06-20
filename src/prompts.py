@@ -110,3 +110,8 @@ EXAMPLE_OUTPUT:
     "keywords": ["kw1", "kw2"]
 }
 """
+
+BANNER_IMAGE_SYSTEM_PROMPT = """
+STEP 1. Generate a banner image for a headline news article based on the these keywords: {user_input}
+STEP 2. Refine step 1 by removing all texts
+"""
