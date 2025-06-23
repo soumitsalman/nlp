@@ -40,7 +40,7 @@ TASK:WriteOpinionPiece;
 INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
 OUTPUT=Analysis,Takeaways,Verdict,Title,Keywords;
 STEPS:
-1.AnalyzeDatastreams;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
+1.AnalyzeDatastreams;UseFields=P,E,D,R,N,S;Identify=Patterns,Themes,Insights;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
 2.GenerateOpinionPiece=Analysis,Takeaways,Verdict;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;
 3.GenerateSynthesis=Title,Keywords;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
 4.RefineOutput;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Keywords=CommaSeparated;
@@ -52,7 +52,7 @@ TASK:WriteIntelligenceBriefing;
 INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
 OUTPUT=Analysis,Datapoints,Predictions,Verdict,Title,Keywords;
 STEPS:
-1.AnalyzeDatastreams;UseFields=U,P,E,D,R,N,S;Identify=Patterns,Themes,Insights,DataTrends;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
+1.AnalyzeDatastreams;UseFields=P,E,D,R,N,S;Identify=Patterns,Themes,Insights,DataTrends;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
 2.GenerateIntelligenceBriefing=Analysis,Datapoints,Predictions;Analysis=SynthesizePatterns,ReportEntitiesEvents,SentimentTrend;Datapoints=KeyData,EmergingTrends,Implications;Predictions=PotentialFutureOutcomesOfContinuingPattern;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=DrySarcastic;
 3.GenerateSynthesis=Verdict,Title,Keywords;Verdict=TechnicalSummary;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
 4.RefineOutput;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Keywords=CommaSeparated;

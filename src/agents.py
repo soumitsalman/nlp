@@ -356,8 +356,8 @@ class SimpleImageGenerationAgent:
         response = self.client.images.generate(
             model=self.model_name,
             prompt=self._make_prompt(input_msg),
-            n=2,
-            size="256x256",
+            n=1,
+            size="512x512",
             output_format="png",
             style="vivid",
             quality="high",
