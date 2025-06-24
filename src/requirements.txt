@@ -1,10 +1,10 @@
+transformers
+sentence-transformers
 accelerate
+llama-cpp-python
 optimum[intel] 
 optimum[onnxruntime]
 optimum[openvino]
-llama-cpp-python
-sentence-transformers
-transformers
 openai
 llama-index
 tiktoken
