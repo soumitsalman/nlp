@@ -65,21 +65,24 @@ def test_embedder():
 
 # @log_runtime(logger=logger)
 def test_digestor():
+    from tqdm import tqdm
     from src import prompts, agents, models, utils
-    
+
+    BATCH_SIZE = 2
+    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
     digestor = agents.from_path(
-        "google/gemma-3-12b-it",
-        os.getenv("DIGESTOR_BASE_URL"), 
-        os.getenv("DIGESTOR_API_KEY"),
-        max_input_tokens=DIGESTOR_CONTEXT_LEN,
-        max_output_tokens=512,
-        system_prompt=prompts.DIGEST_SYSTEM_PROMPT,
-        output_parser=models.Digest.parse_compressed,
-        json_mode=False
+        model_path="soumitsr/led-base-article-digestor",
+        max_input_tokens=4096,
+        max_output_tokens=400,
+        output_parser=models.Digest.parse_compressed
     )
-    inputs = load_json("./tests/texts-for-nlp.json")
-    responses = utils.run_batch(digestor.run, random.sample([b['content'] for b in inputs], 5))
-    [ic(r) for r in responses]
+    with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
+        for i in range(0, len(data), BATCH_SIZE):
+            items = [d['content'] for d in data[i:i+BATCH_SIZE]]
+            [ic(r) for r in digestor.run_batch(items)]
+            pbar.update(len(items))
+
+
 
 def test_digest_parser():
     from src.models import Digest
@@ -280,8 +283,8 @@ def test_image_generator():
 if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
-    # test_digestor()
+    test_digestor()
     # test_digestor_perf()
     # test_digest_parser()
-    test_image_generator()
+    # test_image_generator()
    

@@ -49,7 +49,8 @@ class TransformerClient(Text2TextClientBase):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         super().__init__(model_id, max_input_tokens, max_output_tokens, self.device)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, device_map=self.device).to(self.device)
+        torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, torch_dtype=torch_dtype, device_map=self.device).to(self.device)
 
     def run(self, prompt):
         import torch
