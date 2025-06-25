@@ -1,3 +1,4 @@
+unsloth
 optimum[intel] 
 optimum[onnxruntime]
 optimum[openvino]
@@ -7,9 +8,9 @@ onnxruntime
 onnx
 transformers
 sentence-transformers
-azure-storage-blob
-pymongo
 gliner
 tensorboard
 evaluate
 rouge_score
+azure-storage-blob
+pymongo

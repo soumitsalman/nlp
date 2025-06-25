@@ -3,6 +3,8 @@ import os, sys
 import json, re, random
 from dotenv import load_dotenv
 from icecream import ic
+from tqdm import tqdm
+
 
 EMBEDDER_CONTEXT_LEN=512
 DIGESTOR_CONTEXT_LEN=4096
@@ -40,27 +42,30 @@ def test_embedder():
     from src.embedders import TransformerEmbeddings, OVEmbeddings, ORTEmbeddings
     
     data = load_json("./tests/texts-for-nlp.json")
-    input_texts = [d['content'] for d in data[:64]]   
+    input_texts = [d['content'] for d in data]   
 
-    xfemb = TransformerEmbeddings("avsolatorio/GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
-    ovemb = OVEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-ovquant", EMBEDDER_CONTEXT_LEN)
-    ortemb = ORTEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-onnx", EMBEDDER_CONTEXT_LEN)
-    ic(len(input_texts))
+    # xfemb = TransformerEmbeddings("/home/soumitsr/codes/pycoffeemaker/.models/models--avsolatorio--GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
     
-    start = datetime.now()  
-    vecs = xfemb(input_texts)
-    # ic([(vec[:2]+vec[-1:]) for vec in vecs])
-    ic(datetime.now() - start)    
+    # ortemb = ORTEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-onnx", EMBEDDER_CONTEXT_LEN)
     
-    start = datetime.now()  
-    vecs = ovemb(input_texts)
-    # ic([(vec[:2]+vec[-1:]) for vec in vecs])
-    ic(datetime.now() - start)  
+    # start = datetime.now()  
+    # vecs = xfemb(input_texts)
+    # # ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    # ic(datetime.now() - start)    
+    # embedder = OVEmbeddings("/home/soumitsr/codes/pycoffeemaker/.models/gist-small-embedding-v0-q8-openvino", EMBEDDER_CONTEXT_LEN)
+    embedder = TransformerEmbeddings("avsolatorio/GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
+    batch_size = 48
+    with tqdm(total=len(input_texts), desc="Progress", unit="bean") as pbar:
+        for i in range(0, len(input_texts), batch_size):
+            vecs = embedder(input_texts[i:i+batch_size])
+            ic([(vec[:2]+vec[-1:]) for vec in random.sample(vecs, 2)])
+            pbar.update(len(input_texts[i:i+batch_size]))
+    
 
-    start = datetime.now()  
-    vecs = ortemb(input_texts)
-    # ic([(vec[:2]+vec[-1:]) for vec in vecs])
-    ic(datetime.now() - start)  
+    # start = datetime.now()  
+    # vecs = ortemb(input_texts)
+    # # ic([(vec[:2]+vec[-1:]) for vec in vecs])
+    # ic(datetime.now() - start)  
 
 
 # @log_runtime(logger=logger)

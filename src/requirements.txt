@@ -2,6 +2,9 @@ transformers
 sentence-transformers
 accelerate
 llama-cpp-python
+optimum
+openvino
+onnxruntime
 optimum[intel] 
 optimum[onnxruntime]
 optimum[openvino]

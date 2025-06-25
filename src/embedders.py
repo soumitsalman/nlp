@@ -135,7 +135,7 @@ class TransformerEmbeddings(Embeddings):
 
     def _embed(self, texts: str|list[str]):
         import torch
-        with torch.no_grad():
+        with torch.inference_mode():
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
     
@@ -145,20 +145,21 @@ class OVEmbeddings(Embeddings):
     context_len = None
 
     def __init__(self, model_path: str, context_len: int):
-        from optimum.intel.openvino import OVModelForFeatureExtraction
+        from optimum.intel.openvino import OVSentenceTransformer
         from transformers import AutoTokenizer
 
         super().__init__(context_len)        
-        self.model = OVModelForFeatureExtraction.from_pretrained(model_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.model = OVSentenceTransformer.from_pretrained(model_path)
+        # self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
         import torch
-        input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
-        with torch.no_grad():
-            output_tokens = self.model(**input_tokens)
-            vecs = output_tokens.last_hidden_state.mean(axis=1)
+        # input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
+        with torch.inference_mode():
+            vecs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+            # output_tokens = self.model(**input_tokens)
+            # vecs = output_tokens.last_hidden_state.mean(axis=1)
         return vecs
     
 class ORTEmbeddings(Embeddings):
