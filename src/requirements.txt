@@ -1,7 +1,6 @@
 transformers
 sentence-transformers
 accelerate
-llama-cpp-python
 optimum
 openvino
 onnxruntime
