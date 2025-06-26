@@ -133,8 +133,8 @@ class TransformerEmbeddings(Embeddings):
             "padding": True
         }
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cuda": self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, device=device)
-        else: self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx"})
+        self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, device=self.device)
+        # else: self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx"})
         
     def _embed(self, texts: str|list[str]):
         import torch
