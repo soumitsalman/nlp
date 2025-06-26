@@ -123,6 +123,7 @@ class TransformerEmbeddings(Embeddings):
     model = None
 
     def __init__(self, model_path: str, context_len: int):
+        import torch
         from sentence_transformers import SentenceTransformer
 
         super().__init__(context_len)
@@ -131,8 +132,10 @@ class TransformerEmbeddings(Embeddings):
             "max_length": context_len,
             "padding": True
         }
-        self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs)
-
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device == "cuda": self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, device=device)
+        else: self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx"})
+        
     def _embed(self, texts: str|list[str]):
         import torch
         with torch.inference_mode():
