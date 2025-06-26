@@ -138,7 +138,7 @@ class TransformerEmbeddings(Embeddings):
         
     def _embed(self, texts: str|list[str]):
         import torch
-        with torch.inference_mode(), torch.amp.autocast(self.device):
+        with torch.inference_mode(), torch.no_grad():
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
     
@@ -159,7 +159,7 @@ class OVEmbeddings(Embeddings):
     def _embed(self, texts: str|list[str]):
         import torch
         # input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
-        with torch.inference_mode(), torch.amp.autocast("cpu"):
+        with torch.no_grad(), torch.inference_mode():
             vecs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
             # output_tokens = self.model(**input_tokens)
             # vecs = output_tokens.last_hidden_state.mean(axis=1)
@@ -182,7 +182,7 @@ class ORTEmbeddings(Embeddings):
     def _embed(self, texts: str|list[str]):
         import torch
         input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
-        with torch.inference_mode(), torch.amp.autocast("cpu"):
+        with torch.inference_mode(), torch.no_grad():
             output_tokens = self.model(**input_tokens)
             vecs = output_tokens.last_hidden_state.mean(axis=1)   
         return vecs
