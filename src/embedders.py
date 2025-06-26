@@ -132,13 +132,13 @@ class TransformerEmbeddings(Embeddings):
             "max_length": context_len,
             "padding": True
         }
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        if device == "cuda": self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, device=device)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if self.device == "cuda": self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, device=device)
         else: self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx"})
         
     def _embed(self, texts: str|list[str]):
         import torch
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.amp.autocast(self.device):
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
     
@@ -152,14 +152,14 @@ class OVEmbeddings(Embeddings):
         from transformers import AutoTokenizer
 
         super().__init__(context_len)        
-        self.model = OVSentenceTransformer.from_pretrained(model_path)
+        self.model = OVSentenceTransformer.from_pretrained(model_path, compile={"num_threads": os.cpu_count()-1})
         # self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
         import torch
         # input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.amp.autocast("cpu"):
             vecs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
             # output_tokens = self.model(**input_tokens)
             # vecs = output_tokens.last_hidden_state.mean(axis=1)
@@ -182,7 +182,7 @@ class ORTEmbeddings(Embeddings):
     def _embed(self, texts: str|list[str]):
         import torch
         input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
-        with torch.no_grad():
+        with torch.inference_mode(), torch.amp.autocast("cpu"):
             output_tokens = self.model(**input_tokens)
             vecs = output_tokens.last_hidden_state.mean(axis=1)   
         return vecs

@@ -48,14 +48,15 @@ class TransformerClient(Text2TextClientBase):
         from transformers import AutoModelForSeq2SeqLM
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cuda": dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-        else: dtype = None
+        self.dtype = torch.bfloat16
+        # if self.device == "cuda": dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        # else: dtype = None
         super().__init__(model_id, max_input_tokens, max_output_tokens, self.device)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, torch_dtype=dtype, device_map=self.device).to(self.device)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, torch_dtype=self.dtype, device_map=self.device).to(self.device)
 
     def run(self, prompt):
         import torch
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
             input_tokens = self._tokenize_prompts(prompt)
             output_tokens = self.model.generate(
                 **input_tokens,
@@ -68,7 +69,7 @@ class TransformerClient(Text2TextClientBase):
 
     def run_batch(self, prompts):
         import torch
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
             input_tokens = self._tokenize_prompts(prompts)
             output_tokens = self.model.generate(
                 **input_tokens,
