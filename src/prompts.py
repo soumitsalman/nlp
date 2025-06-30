@@ -41,8 +41,8 @@ INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoi
 OUTPUT=Analysis,Takeaways,Verdict,Title,Keywords;
 STEPS:
 1.AnalyzeDatastreams;UseFields=P,E,D,R,N;Identify=Patterns,Themes,Insights;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
-2.GenerateOpinionPiece=Analysis,Takeaways,Verdict;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;
-3.GenerateSynthesis=Title,Keywords;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
+2.GenerateOpinionPiece=Analysis,Takeaways;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=Slighly-comical,Self-deprecating;
+3.GenerateSynthesis=Verdict,Title,Keywords;Verdict=TechnicalSummary;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
 4.RefineOutput;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Keywords=CommaSeparated;
 EXAMPLE_OUTPUT=## Title\nWhoDidWhatToWhomInWhere...\n## Analysis\nPatterns...\n## Takeaways\n- Insight1\n- Insight2...\n## Verdict\nSummary...\n## Keywords\nkw1,kw2,...
 """
@@ -53,7 +53,7 @@ INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoi
 OUTPUT=Analysis,Datapoints,Predictions,Verdict,Title,Keywords;
 STEPS:
 1.AnalyzeDatastreams;UseFields=P,E,D,R,N;Identify=Patterns,Themes,Insights,DataTrends;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
-2.GenerateIntelligenceBriefing=Analysis,Datapoints,Predictions;Analysis=SynthesizePatterns,ReportEntitiesEvents,SentimentTrend;Datapoints=KeyData,EmergingTrends,Implications;Predictions=PotentialFutureOutcomesOfContinuingPattern;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=DrySarcastic;
+2.GenerateIntelligenceBriefing=Analysis,Datapoints,Predictions;Analysis=SynthesizePatterns,ReportEntitiesEvents,SentimentTrend;Datapoints=KeyData,EmergingTrends,Implications;Predictions=PotentialFutureOutcomesOfContinuingPattern;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual,DataCentric;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=Sarcastic,Cynical;
 3.GenerateSynthesis=Verdict,Title,Keywords;Verdict=TechnicalSummary;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
 4.RefineOutput;TotalLength=500-700Words;VerdictLength=50-80Words;TitleLength=10-20Words;Keywords=CommaSeparated;
 EXAMPLE_OUTPUT=## Title\nWhoDidWhatToWhomInWhere...\n## Analysis\nObservablePatterns...\n## Datapoints\n- KeyData 1\n- KeyData 2...\n## Verdict\nSummaryVerdict...\n## Predictions\n- Potential Outcome 1 1\n- Potential Outcome 2\n## Keywords\nkw1,kw2,...
@@ -72,8 +72,9 @@ OUTPUT_FORMAT=JSON;
 }
 STEPS:
 1.AnalyzeDatastreams;UseFields=P,E,D,R,N;Identify=Patterns,Themes,Insights;Sentiments;Grounding=Normative,MultiNews;Focus=TopicRelevance;
-2.GenerateOpinionPiece=Analysis,Takeaways,Verdict;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Verdict=TechnicalSummary;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;AnalysisLength=300-400Words;TakawaysLength=100-200Words;VerdictLength=50-70Words;
-3.GenerateSynthesis=Title,Keywords;Title=Highlight[Who,Action,What,Object,Where];TitleLength=10-20Words;Keywords=People,Organizations,GeographicRegions;
+2.GenerateOpinionPiece=Analysis,Takeaways;Analysis=SynthesizePatterns,ReportEntitiesEvents;Takeaways=KeyInsights,Implications;Content=CoreFindings,KeyData;Style=Direct,Technical,Factual;Avoid=Speculation,Narrative,EmotiveLanguage;Tone=Slightly-comical,Self-deprecating;
+3.GenerateSynthesis=Verdict,Title,Keywords;Verdict=TechnicalSummary;Title=Highlight[Who,Action,What,Object,Where];Keywords=People,Organizations,GeographicRegions;
+4.RefineOutput;AnalysisLength=300-400Words;TakawaysLength=100-200Words;VerdictLength=50-70Words;TitleLength=10-20Words;Keywords=CommaSeparated;
 EXAMPLE_OUTPUT:
 {
     "title": "Title",
@@ -111,7 +112,12 @@ EXAMPLE_OUTPUT:
 }
 """
 
+# BANNER_IMAGE_SYSTEM_PROMPT = """
+# STEP 1. Generate a banner image for a headline news article based on: {user_input}
+# STEP 2. Refine step 1 by removing all texts
+# """
+
 BANNER_IMAGE_SYSTEM_PROMPT = """
-STEP 1. Generate a banner image for a headline news article based on: {user_input}
-STEP 2. Refine step 1 by removing all texts
+STEP 1. Draw a news article banner image for: {user_input}.
+STEP 2. Remove all texts and refine the image.
 """
