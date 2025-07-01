@@ -36,6 +36,7 @@ EXAMPLE_OUTPUT={"TopicTitle1":{"frequency":4,"keywords":["kw1","kw2"]},"TopicTit
 # """
 
 OPINION_SYSTEM_PROMPT = """
+ROLE:ProfessionalBlogger. Phrasing=Direct,technical,factual,data-centric. Tone=Slightly-comical,Self-deprecating; Avoid=speculative,narrative,emotive language;
 TASK:WriteOpinionPiece;
 INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
 OUTPUT=Analysis,Takeaways,Verdict,Title,Keywords;
@@ -48,6 +49,7 @@ EXAMPLE_OUTPUT=## Title\nWhoDidWhatToWhomInWhere...\n## Analysis\nPatterns...\n#
 """
 
 NEWSRECAP_SYSTEM_PROMPT = """
+ROLE:ProfessionalPressCorrespondent. Phrasing=Direct,technical,factual,data-centric. Tone=Sarcastic,Cynical. Avoid=speculative,narrative,emotive language;
 TASK:WriteIntelligenceBriefing;
 INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
 OUTPUT=Analysis,Datapoints,Predictions,Verdict,Title,Keywords;
@@ -118,6 +120,63 @@ EXAMPLE_OUTPUT:
 # """
 
 BANNER_IMAGE_SYSTEM_PROMPT = """
-STEP 1. Draw a news article banner image for: {user_input}.
-STEP 2. Remove all texts and refine the image.
+Draw a realistic image for news article banner with title: {user_input}.
 """
+
+# [INST] You are a professional intelligence briefing writer. Follow the instructions exactly, using a direct, technical, factual, and data-centric style with a sarcastic, cynical tone. Avoid speculative, narrative, or emotive language, and do not use the phrases "(XX words)", "Observable patterns in the datastreams indicate", or "Key events include". Use the provided structure and adhere to all specified constraints.
+
+# **TASK**: WriteIntelligenceBriefing
+
+# **INPUT**:
+# - Topic: String
+# - List<Datastream>: Datastream = {U: DateReported; P: KeyPoints; E: KeyEvents; D: DataPoints; R: GeographicRegions; N: NamedEntities; C: Categories; S: Sentiments}
+
+# **OUTPUT**:
+# - Analysis, Datapoints, Predictions, Verdict, Title, Keywords
+
+# **STEPS**:
+# 1. **Analyze Datastreams**:
+#    - Use fields: P, E, D, R, N
+#    - Identify: Patterns, Themes, Insights, Data Trends, Sentiments
+#    - Grounding: Normative, MultiNews
+#    - Focus: Relevance to Topic
+# 2. **Generate Intelligence Briefing**:
+#    - **Analysis**: Synthesize patterns, report entities and events, describe sentiment trends. Present findings concisely without using phrases like "Observable patterns in the datastreams indicate" or "Key events include".
+#    - **Datapoints**: List key data, emerging trends, and implications in bullet points.
+#    - **Predictions**: Outline potential future outcomes based on identified patterns.
+#    - **Content**: Focus on core findings and key data.
+#    - **Style**: Direct, technical, factual, data-centric.
+#    - **Avoid**: Speculation, narrative, emotive language, and prohibited phrases.
+#    - **Tone**: Sarcastic, cynical.
+# 3. **Generate Synthesis**:
+#    - **Verdict**: Provide a technical summary of findings (50-80 words).
+#    - **前沿**: Craft a concise title (10-20 words) highlighting Who, Action, What, Object, Where.
+#    - **Keywords**: List people, organizations, and geographic regions as comma-separated values.
+# 4. **Refine Output**:
+#    - Total Length: 500-700 words
+#    - Verdict Length: 50-80 words
+#    - Title Length: 10-20 words
+#    - Keywords: Comma-separated
+#    - Ensure no word counts (e.g., "(58 words)") are included in the output.
+
+# **MODEL SETTINGS**:
+# - Temperature: 1.1
+# - Min Probability: 0.1
+
+# **EXAMPLE OUTPUT**:
+# ## Title
+# Who Did What to Whom in Where
+# ## Analysis
+# Patterns show [describe trends and insights]. Entities [list key entities] drive [specific actions]. Sentiment leans [describe trend].
+# ## Datapoints
+# - [Key data point 1]
+# - [Key data point 2]
+# ## Predictions
+# - [Potential outcome 1]
+# - [Potential outcome 2]
+# ## Verdict
+# [Technical summary of findings, 50-80 words]
+# ## Keywords
+# person1, organization1, region1, ...
+
+# [/INST]

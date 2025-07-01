@@ -51,7 +51,7 @@
 deepseek-ai/DeepSeek-R1-0528 --> good for article generation
 gpt-4.1-nano or mini --> BAD for content generation
 microsoft/WizardLM-2-8x22B --> good for article generation
-"Sao10K/L3.1-70B-Euryale-v2.2" --> good for article generation
+"Sao10K/L3.1-70B-Euryale-v2.2" --> ok for article generation; doesnt follow instructions well
 nvidia/Llama-3.1-Nemotron-70B-Instruct --> BAD for instruction following in article generation
 
 locally -- seq2seq like T5s are better
@@ -62,3 +62,4 @@ black-forest-labs/FLUX-1-dev --> good $0.009
 run-diffusion/Juggernaut-Lightning-Flux --> good $0.009
 run-diffusion/Juggernaut-Flux --> good but slow $0.009
 stabilityai/sdxl-turbo --> HORRIBLE $0.0002
+stabilityai/sd3.5-medium --> meh $0.03

@@ -360,7 +360,7 @@ class SimpleImageGenerationAgent:
             model=self.model_name,
             prompt=self._make_prompt(input_msg),
             n=1,
-            size="512x512",
+            size="512x384",
             output_format="png",
             style="vivid",
             quality="high",
