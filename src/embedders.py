@@ -10,6 +10,8 @@ from .utils import *
 
 logger = logging.getLogger(__name__)
 
+_MAX_CHUNKS = 8
+
 class Embeddings(ABC):
     splitter = None
     context_len: int = None
@@ -28,7 +30,7 @@ class Embeddings(ABC):
             include_metadata=False, 
             include_prev_next_rel=False
         )
-        return self.splitter.split_text(text)       
+        return self.splitter.split_text(text)[:_MAX_CHUNKS]       
 
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
         texts = texts if isinstance(texts, list) else [texts]
