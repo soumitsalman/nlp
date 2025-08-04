@@ -16,7 +16,8 @@ __all__ = [
     "LlamaCppEmbeddings",
     "SimpleTaskAgent",
     "SimpleTextGenerationAgent",
-    "SimpleImageGenerationAgent",
+    "RemoteImageGenerationAgent",
+    "TransformerImageGenerationAgent",
     "Digest",
     "GeneratedArticle",
     "OPINION_SYSTEM_PROMPT",
@@ -26,6 +27,10 @@ __all__ = [
     "NEWSRECAP_SYSTEM_PROMPT_JSON",
     "OPINION_SYSTEM_PROMPT_JSON",
     "BANNER_IMAGE_SYSTEM_PROMPT",
+    "JOURNALIST_SYSTEM_PROMPT",
+    "EDITOR_SYSTEM_PROMPT",
+    "HIGHLIGHTER_SYSTEM_PROMPT",
     "run_batch",
-    "truncate_batch"
+    "truncate_batch",
+    "cleanup_markdown"
 ]  # Specify modules to be exported

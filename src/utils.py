@@ -62,10 +62,11 @@ isalphaorspace = lambda text: bool(re.match(r"^[a-zA-Z\s]+$", text))
 
 def remove_before(text: str, sub: str) -> str:
     index = text.find(sub)
-    if index > 0: return text[index+len(sub):]
+    if index >= 0: return text[index+len(sub):]
     return text
 
 def remove_after(text: str, sub: str) -> str:
     index = text.find(sub)
-    if index > 0: return text[:index]
+    if index >= 0: return text[:index]
     return text
+

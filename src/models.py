@@ -162,9 +162,9 @@ class GeneratedArticle(BaseModel):
     raw: str
     title: str = Field(default=None)
     intro: Optional[str] = Field(default=None)
-    analysis: list[str] = Field(default=[])
-    insights: list[str] = Field(default=[])
-    verdict: str = Field(default="")
+    analysis: Optional[list[str]] = Field(default=[])
+    insights: Optional[list[str]] = Field(default=[])
+    summary: str = Field(default="")
     predictions: Optional[list[str]] = Field(default=[])
     keywords: Optional[list[str]] = None
 
@@ -180,9 +180,9 @@ class GeneratedArticle(BaseModel):
                 raw=text,
                 title=data.get("title"),
                 intro=data.get("intro"),
-                analysis=data.get("analysis"),
+                analysis=data.get("analysis") or data.get("highlights"),
                 insights=data.get("datapoints") or data.get("takeaways"),
-                verdict=data.get("verdict"),
+                summary=data.get("summary"),
                 predictions = data.get("predictions"),
                 keywords = data.get("keywords")
             )
@@ -211,41 +211,40 @@ class GeneratedArticle(BaseModel):
                 intro="\n".join(chain_lines(M_INTRODUCTION)),
                 analysis=chain_lines(M_ANALYSIS),
                 insights=chain_lines(M_INSIGHTS),
-                verdict="\n".join(chain_lines(M_VERDICT)),
+                summary="\n".join(chain_lines(M_VERDICT)),
                 predictions=chain_lines(M_PREDICTION),
                 keywords=split_keywords(next(chain_lines(M_KEYWORDS), ""))
             )  
         except: print(text)
             
-
-
-
-
-# def cleanup_markdown(text: str) -> str:
-#     # remove all \t with
-#     text = text.replace("\t", "")
+def cleanup_markdown(text: str) -> str:
+    text = remove_before(text, M_START)
+    text = remove_after(text, M_END)
+    # remove all \t with
+    text = text.replace("\t", "")
+    # Replace "\n(any number of spaces)\n" with "\n\n"
+    text = re.sub(r"\n\s*\n", "\n\n", text)
     
-#     # removing the first line if it looks like a header
-#     text = text.strip()
-#     if any(text.startswith(tag) for tag in MARKDOWN_HEADERS):
-#         text = remove_before(text, "\n") 
+    # removing the first line if it looks like a header
+    text = text.strip()
+    if any(text.startswith(tag) for tag in MARKDOWN_HEADERS):
+        text = remove_before(text, "\n") 
 
-#     # replace remaining headers with "**"
-#     text = re.sub(r"(#+ )(.*?)(\n|$)", replace_header_tag, text)
-#     # Replace "\n(any number of spaces)\n" with "\n\n"
-#     text = re.sub(r"\n\s*\n", "\n\n", text)
-#     # # Remove any space after "\n"
-#     # text = re.sub(r"\n\s+", "\n", text)
-#     # Replace "\n\n\n" with "\n\n"
-#     # text = re.sub(r"\n\n\n", "\n\n", text)
-#     # # remove > right after \n
-#     # text = re.sub(r"\n>", "\n", text)
-#     # replace every single \n with \n\n
-#     text = re.sub(r'(?<!\n)\n(?!\n)', '\n\n', text)
-#     # Add a space after every "+" if there is no space
-#     text = re.sub(r'\+(?!\s)', '+ ', text)
+    # replace remaining headers with "**"
+    text = re.sub(r"(#+ )(.*?)(\n|$)", _replace_header_tag, text)
+    
+    # # Remove any space after "\n"
+    # text = re.sub(r"\n\s+", "\n", text)
+    # Replace "\n\n\n" with "\n\n"
+    # text = re.sub(r"\n\n\n", "\n\n", text)
+    # # remove > right after \n
+    # text = re.sub(r"\n>", "\n", text)
+    # # replace every single \n with \n\n
+    # text = re.sub(r'(?<!\n)\n(?!\n)', '\n\n', text)
+    # # Add a space after every "+" if there is no space
+    # text = re.sub(r'\+(?!\s)', '+ ', text)
 
-#     return text.strip()
+    return text.strip()
 
 def _replace_header_tag(match):
     header_content = match.group(2).strip()  # The content after "# " or "## "

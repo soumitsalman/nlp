@@ -336,8 +336,73 @@ class SimpleTextGenerationAgent:
         responses = self.client.run_batch(prompts)
         if self.output_parser: return run_batch(self.output_parser, responses, BATCH_SIZE)
         return responses
-    
-class SimpleImageGenerationAgent:
+
+class LlamaCppImageGenerationAgent:
+    def __init__(
+        self,
+        model_path: str = "cosmos-predict2-14b-t2i-ex3-q4_k_m.gguf",
+        n_threads: int = 8,  # Adjust based on your CPU
+        system_prompt: str = None,
+        output_processor: Callable = None
+    ):
+        from llama_cpp import Llama
+        
+        self.model = Llama(
+            model_path=model_path,
+            n_threads=n_threads,
+            n_ctx=2048,  # Context length - adjust if needed
+            verbose=False
+        )
+        self.system_prompt = system_prompt
+        self.output_processor = output_processor or (lambda x: x)
+
+    def run(self, input_msg: str):
+        prompt = [
+            # { "role": "system", "content": self.system_prompt },
+            { "role": "user", "content": input_msg }
+        ]
+        response = self.model.create_chat_completion(
+            messages=prompt,
+            seed=666
+        )      
+        return response
+
+_NEGATIVE_PROMPT = "text overlay"
+
+class TransformerImageGenerationAgent:
+    def __init__(
+        self,
+        model_id: str = "RunDiffusion/Juggernaut-X-v10",
+        output_processor: Callable = None,
+        num_inference_steps: int = 20,
+        height: int = 512,
+        width: int = 512
+    ):
+        import torch
+        from diffusers import DiffusionPipeline
+
+        self.output_processor = output_processor or (lambda x: x)
+        self.num_inference_steps = num_inference_steps
+        self.height = height
+        self.width = width
+        self.pipe = DiffusionPipeline.from_pretrained(model_id)
+        # Configure to use CPU and all available threads
+        self.pipe.enable_sequential_cpu_offload()
+        torch.set_num_threads(os.cpu_count())
+
+    def run(self, user_msg: str):
+        import torch
+        with torch.no_grad():
+            result = self.pipe(user_msg, num_inference_steps=self.num_inference_steps, height=self.height, width=self.width)
+        return self.output_processor(result.images[0].tobytes())
+
+    def run_batch(self, user_msgs: list[str]):
+        import torch
+        with torch.no_grad():
+            result = self.pipe(user_msgs, num_inference_steps=self.num_inference_steps, height=self.height, width=self.width)
+        return run_batch(lambda x: self.output_processor(x.tobytes()), result.images, len(user_msgs))
+
+class RemoteImageGenerationAgent:
     model_name = None
     client = None
     system_prompt = None

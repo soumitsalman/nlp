@@ -210,12 +210,18 @@ def test_digestor_perf():
                 pbar.update(len(items))
 
 def test_image_generator():
-    from src import SimpleImageGenerationAgent, BANNER_IMAGE_SYSTEM_PROMPT
-    banner_agent = SimpleImageGenerationAgent(
-        "run-diffusion/Juggernaut-Flux",
-        os.getenv('DEEPINFRA_BASE_URL'),
-        os.getenv('DEEPINFRA_API_KEY'),
-        BANNER_IMAGE_SYSTEM_PROMPT        
+    from src import RemoteImageGenerationAgent, BANNER_IMAGE_SYSTEM_PROMPT
+    # banner_agent = SimpleImageGenerationAgent(
+    #     "run-diffusion/Juggernaut-Flux",
+    #     os.getenv('DEEPINFRA_BASE_URL'),
+    #     os.getenv('DEEPINFRA_API_KEY'),
+    #     BANNER_IMAGE_SYSTEM_PROMPT        
+    # )
+    banner_agent = RemoteImageGenerationAgent(
+        "nvidia/Cosmos-Predict2-2B-Text2Image",
+        None,
+        None,
+        BANNER_IMAGE_SYSTEM_PROMPT
     )
     input_tags = [
         [
@@ -285,11 +291,52 @@ def test_image_generator():
         print(save_image(f"{int(datetime.now().timestamp())}-{random.randint(1000, 2000)}", banner_agent.run(tags)))
 
 
+def test_local_image_generator():
+    from src import TransformerImageGenerationAgent
+    agent = TransformerImageGenerationAgent(
+        model_id="nvidia/Cosmos-Predict2-2B-Text2Image",
+        output_processor=lambda x: x.save(f".test/{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(1000, 2000)}.png"),
+        num_inference_steps=1,
+        height=512,
+        width=512
+    )
+
+    inputs = [
+        "Create a banner for a health article, showing a UK cityscape under cloudy skies, with a concerned family and a child with a faint measles rash. Include an NHS hospital and a digital billboard warning of data breaches. Add a quantum biosensor silhouette. Use muted greys, blues, reds, with a green accent for hope.",
+        "Create a banner for an AI arms race article, depicting a futuristic cityscape with glowing data centers and corporate logos (Apple, Meta, Google). Show a tense scene of engineers coding in a high-tech lab, with a digital screen displaying AI model benchmarks and a warning about security breaches.",
+        "Create a blog banner for an article titled 'White House Orders Quantum-Safe Encryption Strategy as AI-Driven Ransomware Surges Globally'. Avoid text overlay.",
+        "Create a blog banner for an article titled 'Engineers Choose Tiny Interpreters to Build Extensible Software Tools'. Avoid text overlay.",
+        "Create a blog banner for an article with tags: "+", ".join([
+            "air and aviation",
+            "security and defense technology",
+            "military and defense",
+            "qatar",
+            "ayatollah ali khamenei",
+            "abdullah ocalan",
+            "germany",
+            "sonal çağaptay",
+            "ukraine",
+            "yasmin abdullah ocalán",
+            "iran",
+            "masoud pezeshkian",
+            "barack obama",
+            "united states",
+            "putin",
+            "iraq"
+            
+        ])+". Avoid text overlay."
+    ]
+    with tqdm(total=len(inputs), desc="Processing images") as pbar:
+        for input in inputs:
+            agent.run(input)
+            pbar.update(1)
+
 if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
-    test_digestor()
+    # test_digestor()
     # test_digestor_perf()
     # test_digest_parser()
     # test_image_generator()
+    test_local_image_generator()
    
