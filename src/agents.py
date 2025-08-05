@@ -436,8 +436,6 @@ class RemoteImageGenerationAgent:
     def run_batch(self, input_msgs: list):
         return run_batch(self.run, input_msgs)
 
-
-
 def from_path(
     model_path: str,
     base_url: str = None, 
@@ -470,5 +468,15 @@ def from_path(
         TransformerClient(model_path, context_len, max_output_tokens),
         system_prompt, output_parser
     )
-    
+  
+def image_agent_from_path(
+    model_path: str,
+    base_url: str = None, 
+    api_key: str = None,
+    system_prompt: str = None,
+    output_parser: Callable = None
+):
+    if base_url: return RemoteImageGenerationAgent(model_path, base_url, api_key, system_prompt, output_parser)
+    elif model_path.startswith(LLAMACPP_PREFIX): return LlamaCppImageGenerationAgent(model_path.removeprefix(LLAMACPP_PREFIX), system_prompt, output_parser)
+    else: return TransformerImageGenerationAgent(model_path, output_parser)
     
