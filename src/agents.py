@@ -354,7 +354,7 @@ class DiffuserImageGenerationAgent(LMAgentBase):
         self.num_inference_steps = num_inference_steps
         self.height = height
         self.width = width
-        self.pipe = DiffusionPipeline.from_pretrained(model_id)
+        self.pipe = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
         if torch.cuda.is_available(): self.pipe = self.pipe.to("cuda")
         super().__init__(None, None, output_processor)
         # Configure to use CPU and all available threads
@@ -464,5 +464,5 @@ def image_agent_from_path(
     width: int = 512
 ):
     if base_url: return RemoteImageGenerationAgent(model_path, base_url, api_key, output_parser, num_inference_steps, height, width)
-    else: return DiffuserImageGenerationAgent(model_path, output_parser)
+    else: return DiffuserImageGenerationAgent(model_path, output_parser, output_processor, num_inference_steps, height, width)
     
