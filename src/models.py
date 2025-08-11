@@ -160,7 +160,7 @@ A_FIELDS = list(chain(*[M_TITLE, M_INTRODUCTION, M_ANALYSIS, M_INSIGHTS, M_VERDI
 
 class ArticleMetadata(BaseModel):
     raw: str
-    headline: Optional[str] = Field(default=None)
+    headline: str = Field(default=None)
     intro: Optional[str] = Field(default=None)
     highlights: Optional[list[str]] = Field(default=[])
     insights: Optional[list[str]] = Field(default=[])
@@ -172,8 +172,7 @@ class ArticleMetadata(BaseModel):
         text = text.strip()
         # text = remove_before(text, _THEND).strip()
         text = text.removeprefix("```json").removesuffix("```").strip()
-        if not text: return
-        
+        # if not text: return
         try:
             data = json.loads(text)
             return ArticleMetadata(
@@ -186,7 +185,11 @@ class ArticleMetadata(BaseModel):
                 predictions = data.get("predictions"),
                 keywords = data.get("keywords")
             )
-        except json.JSONDecodeError: print(text)
+        except json.JSONDecodeError as e:
+            print(text)
+            raise e
+
+        
 
     def parse_markdown(text: str):
         text = text.strip()

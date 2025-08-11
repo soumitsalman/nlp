@@ -15,10 +15,10 @@ log = logging.getLogger(__name__)
 
 class LMClientBase(ABC):
     @abstractmethod
-    def run(self, prompt: list[dict[str, str]]) -> str:
+    def run(self, prompt: list[dict[str, str]], **kwargs) -> str:
         raise NotImplementedError("Subclass must implement abstract method")
 
-    def run_batch(self, prompts: list[list[dict[str, str]]]) -> list[str]:
+    def run_batch(self, prompts: list[list[dict[str, str]]], **kwargs) -> list[str]:
         return list(map(self.run, prompts))
 
 class LMAgentBase(ABC):
@@ -83,7 +83,7 @@ class TransformerText2TextClient(LMClientBase):
         self.tokenizer = LocalTokenizer(model_id, max_input_tokens, max_output_tokens, self.device)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, torch_dtype=self.dtype, device_map=self.device).to(self.device)
 
-    def run(self, prompt):
+    def run(self, prompt, **kwargs):
         import torch
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
             input_tokens = self.tokenizer.tokenize_prompts(prompt)
@@ -96,7 +96,7 @@ class TransformerText2TextClient(LMClientBase):
             generated_text = self.tokenizer.decode(output_tokens[0])
         return generated_text
 
-    def run_batch(self, prompts):
+    def run_batch(self, prompts, **kwargs):
         import torch
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
             input_tokens = self.tokenizer.tokenize_prompts(prompts)
@@ -125,7 +125,7 @@ class OVText2TextClient(LMClientBase):
         self.tokenizer = LocalTokenizer(model_id, max_input_tokens, max_output_tokens)
         self.model = OVModelForSeq2SeqLM.from_pretrained(model_id)
         
-    def run(self, prompt):
+    def run(self, prompt, **kwargs):
         input_tokens = self.tokenizer.tokenize_prompts(prompt)
         output_tokens = self.model.generate(
             **input_tokens, 
@@ -134,7 +134,7 @@ class OVText2TextClient(LMClientBase):
         )
         return self.tokenizer.decode(output_tokens[0])
 
-    def run_batch(self, prompts):
+    def run_batch(self, prompts, **kwargs):
         input_tokens = self.tokenizer.tokenize_prompts(prompts)
         output_tokens = self.model.generate(
             **input_tokens, 
@@ -168,7 +168,7 @@ class ONNXText2TextClient(LocalTokenizer):
             provider="CPUExecutionProvider"
         )
 
-    def run(self, prompt):
+    def run(self, prompt, **kwargs):
         import torch
         with torch.no_grad():
             input_tokens = self.tokenizer.tokenize_prompts(prompt)
@@ -182,7 +182,7 @@ class ONNXText2TextClient(LocalTokenizer):
             generated_text = self.tokenizer.decode(output_tokens[0])
         return generated_text
 
-    def run_batch(self, prompts):
+    def run_batch(self, prompts, **kwargs):
         import torch
         with torch.no_grad():
             input_tokens = self.tokenizer.tokenize_prompts(prompts)
@@ -244,28 +244,26 @@ class RemoteTextGeneratorClient(LMClientBase):
         model_name: str,
         base_url: str, 
         api_key: str,
-        max_output_tokens: int,
-        json_mode: bool
+        max_output_tokens: int
     ):
         from openai import OpenAI
 
         self.openai_client = OpenAI(api_key=api_key, base_url=base_url, timeout=180, max_retries=3)
         self.model_name = model_name
         self.max_output_tokens = max_output_tokens
-        self.json_mode = json_mode
-
-    @retry(tries=2, delay=5, logger=log)
-    def run(self, prompt: list[dict[str, str]]) -> str:
+    
+    def run(self, prompt: list[dict[str, str]], **kwargs) -> str:
+        json_mode = kwargs.get("json_mode", False)
         return self.openai_client.chat.completions.create(
             messages=prompt,
             model=self.model_name,
             max_completion_tokens=self.max_output_tokens,
-            response_format={ "type": "json_object" } if self.json_mode else None,
+            response_format={ "type": "json_object" } if json_mode else None,
             seed=666
         ).choices[0].message.content
     
-    def run_batch(self, prompts: list[list[dict[str, str]]]) -> list[str]:
-        return run_batch(self.run, prompts, BATCH_SIZE)
+    def run_batch(self, prompts: list[list[dict[str, str]]], **kwargs) -> list[str]:
+        return run_batch(lambda x: self.run(x, **kwargs), prompts, BATCH_SIZE)
     
 class LlamaCppTextGeneratorClient(LMClientBase):
     model = None
@@ -273,21 +271,21 @@ class LlamaCppTextGeneratorClient(LMClientBase):
     model = None
     lock = None
     
-    def __init__(self, model_path: str, max_input_tokens: int, max_output_tokens: int, json_mode: bool):
+    def __init__(self, model_path: str, max_input_tokens: int, max_output_tokens: int):
         import threading
         from llama_cpp import Llama
 
         self.lock = threading.Lock()
         self.max_output_tokens = max_output_tokens
         self.temperature = 0.5
-        self.json_mode = json_mode
         self.model = Llama(
             model_path=model_path, n_ctx=max_input_tokens<<1, # this extension is needed to accommodate occasional overflows
             n_gpu_layers=-1,
             embedding=False, verbose=False
         )             
   
-    def run(self, prompt: str) -> str:
+    def run(self, prompt: str, **kwargs) -> str:
+        json_mode = kwargs.get("json_mode", False)
         resp = self.model.create_chat_completion(
             messages=prompt,
             max_tokens=self.max_output_tokens,
@@ -297,14 +295,17 @@ class LlamaCppTextGeneratorClient(LMClientBase):
         )['choices'][0]['message']['content'].strip()      
         return resp
     
-    def run_batch(self, prompts: list[str]) -> list[str]:
-        results = [self.run(text) for text in prompts]
+    def run_batch(self, prompts: list[str], **kwargs) -> list[str]:
+        results = [self.run(text, **kwargs) for text in prompts]
         return results
         
 class TextGeneratorAgent(LMAgentBase):
-    def __init__(self, client, max_input_tokens: int, system_prompt: str, output_parser: Callable):
+    json_mode: bool = False
+
+    def __init__(self, client, max_input_tokens: int, system_prompt: str, output_parser: Callable, json_mode: bool = False):
         super().__init__(client, system_prompt, output_parser)        
         self.max_input_tokens = max_input_tokens
+        self.json_mode = json_mode
 
     def make_prompt(self, input_msg: str):
         if self.system_prompt: return [
@@ -324,16 +325,17 @@ class TextGeneratorAgent(LMAgentBase):
             }
         ]
 
+    @retry(tries=3, delay=5, logger=log)
     def run(self, input_msg: str):
         if self.max_input_tokens: input_msg = truncate(input_msg, self.max_input_tokens)
-        response = self.client.run(self.make_prompt(input_msg))
+        response = self.client.run(self.make_prompt(input_msg), json_mode=self.json_mode)
         if self.output_parser: return self.output_parser(response)
         return response
     
     def run_batch(self, input_messages: list[str]):
         if self.max_input_tokens: input_messages = truncate_batch(input_messages, self.max_input_tokens)
         prompts = run_batch(self.make_prompt, input_messages, BATCH_SIZE)
-        responses = self.client.run_batch(prompts)
+        responses = self.client.run_batch(prompts, json_mode=self.json_mode)
         if self.output_parser: return run_batch(self.output_parser, responses, BATCH_SIZE)
         return responses
 
@@ -446,13 +448,13 @@ def text_generator_client_from_path(
     base_url: str = None, 
     api_key: str = None,
     max_input_tokens: int = None, 
-    max_output_tokens: int = None,
-    json_mode: bool = False
+    max_output_tokens: int = None
 ):
     context_len = max_input_tokens<<1
-    if base_url: return RemoteTextGeneratorClient(model_path, base_url, api_key, max_output_tokens, json_mode)
-    elif model_path.startswith(LLAMACPP_PREFIX): return LlamaCppTextGeneratorClient(model_path.removeprefix(LLAMACPP_PREFIX), context_len, max_output_tokens, json_mode)
+    if base_url: return RemoteTextGeneratorClient(model_path, base_url, api_key, max_output_tokens)
+    elif model_path.startswith(LLAMACPP_PREFIX): return LlamaCppTextGeneratorClient(model_path.removeprefix(LLAMACPP_PREFIX), context_len, max_output_tokens)
     else: return TransformerTextGeneratorClient(model_path, context_len, max_output_tokens)
+
 
 def image_agent_from_path(
     model_path: str,
@@ -464,5 +466,5 @@ def image_agent_from_path(
     width: int = 512
 ):
     if base_url: return RemoteImageGenerationAgent(model_path, base_url, api_key, output_parser, num_inference_steps, height, width)
-    else: return DiffuserImageGenerationAgent(model_path, output_parser, output_processor, num_inference_steps, height, width)
+    else: return DiffuserImageGenerationAgent(model_path, output_parser, num_inference_steps, height, width)
     
