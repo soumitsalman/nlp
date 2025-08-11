@@ -253,12 +253,12 @@ class RemoteTextGeneratorClient(LMClientBase):
         self.max_output_tokens = max_output_tokens
     
     def run(self, prompt: list[dict[str, str]], **kwargs) -> str:
-        json_mode = kwargs.get("json_mode", False)
+        response_format = { "type": "json_object" } if kwargs.get("json_mode") else None
         return self.openai_client.chat.completions.create(
             messages=prompt,
             model=self.model_name,
             max_completion_tokens=self.max_output_tokens,
-            response_format={ "type": "json_object" } if json_mode else None,
+            response_format=response_format,
             seed=666
         ).choices[0].message.content
     
@@ -285,11 +285,11 @@ class LlamaCppTextGeneratorClient(LMClientBase):
         )             
   
     def run(self, prompt: str, **kwargs) -> str:
-        json_mode = kwargs.get("json_mode", False)
+        response_format = { "type": "json_object" } if kwargs.get("json_mode") else None
         resp = self.model.create_chat_completion(
             messages=prompt,
             max_tokens=self.max_output_tokens,
-            response_format={ "type": "json_object" } if self.json_mode else None,
+            response_format=response_format,
             temperature=self.temperature,
             seed=666
         )['choices'][0]['message']['content'].strip()      
@@ -339,13 +339,14 @@ class TextGeneratorAgent(LMAgentBase):
         if self.output_parser: return run_batch(self.output_parser, responses, BATCH_SIZE)
         return responses
 
-_NEGATIVE_PROMPT = "text overlay, partial human figure, blurred edges"
+_NEGATIVE_PROMPT = "text, human face, blurred edges, watermark"
 
 class DiffuserImageGenerationAgent(LMAgentBase):
+
     def __init__(
         self,
         model_id: str,
-        output_processor: Callable = None,
+        output_parser: Callable = None,
         num_inference_steps: int = 25,
         height: int = 1024,
         width: int = 512
@@ -358,7 +359,7 @@ class DiffuserImageGenerationAgent(LMAgentBase):
         self.width = width
         self.pipe = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
         if torch.cuda.is_available(): self.pipe = self.pipe.to("cuda")
-        super().__init__(None, None, output_processor)
+        super().__init__(None, None, output_parser)
         # Configure to use CPU and all available threads
         # self.pipe.enable_sequential_cpu_offload()
         # torch.set_num_threads(os.cpu_count())
@@ -367,13 +368,19 @@ class DiffuserImageGenerationAgent(LMAgentBase):
         import torch
         with torch.no_grad(), torch.inference_mode():
             result = self.pipe(user_msg, negative_prompt=_NEGATIVE_PROMPT, guidance_scale=5, num_inference_steps=self.num_inference_steps,  height=self.height, width=self.width)
-        return self.output_processor(result.images[0])
+        if self.output_parser: return self.output_parser(result.images[0])
+        return result.images[0]
 
     def run_batch(self, user_msgs: list[str]):
         import torch
-        with torch.no_grad(), torch.inference_mode():
-            result = self.pipe(user_msgs, negative_prompt=_NEGATIVE_PROMPT, guidance_scale=5, num_inference_steps=self.num_inference_steps, height=self.height, width=self.width)
-        return run_batch(lambda x: self.output_processor(x), result.images, len(user_msgs))
+        batch_size = os.cpu_count() # this is a rough estimate
+        images = []
+        for i in range(0, len(user_msgs), batch_size):
+            with torch.no_grad(), torch.inference_mode():            
+                results = self.pipe(user_msgs[i:i+batch_size], negative_prompt=_NEGATIVE_PROMPT, guidance_scale=5, num_inference_steps=self.num_inference_steps, height=self.height, width=self.width)
+            if self.output_parser: images.extend(run_batch(self.output_parser, results.images, len(results.images)))
+            else: images.extend(results.images)
+        return images
 
 class RemoteImageGenerationAgent(LMAgentBase):
     model_name = None
@@ -443,7 +450,21 @@ def text2text_agent_from_path(
     elif model_path.startswith(ONNX_PREFIX): return Text2TextAgent(client, system_prompt, output_parser)
     else: return Text2TextAgent(client, system_prompt, output_parser)
   
-def text_generator_client_from_path(
+def text_generator_agent(
+    model_path: str,
+    base_url: str = None, 
+    api_key: str = None,
+    max_input_tokens: int = None, 
+    max_output_tokens: int = None,
+    system_prompt: str = None,
+    output_parser: Callable = None,
+    json_mode: bool = False
+):
+    client = text_generator_client(model_path, base_url, api_key, max_input_tokens, max_output_tokens)
+    return TextGeneratorAgent(client, max_input_tokens, system_prompt, output_parser, json_mode)
+
+
+def text_generator_client(
     model_path: str,
     base_url: str = None, 
     api_key: str = None,
@@ -454,7 +475,6 @@ def text_generator_client_from_path(
     if base_url: return RemoteTextGeneratorClient(model_path, base_url, api_key, max_output_tokens)
     elif model_path.startswith(LLAMACPP_PREFIX): return LlamaCppTextGeneratorClient(model_path.removeprefix(LLAMACPP_PREFIX), context_len, max_output_tokens)
     else: return TransformerTextGeneratorClient(model_path, context_len, max_output_tokens)
-
 
 def image_agent_from_path(
     model_path: str,

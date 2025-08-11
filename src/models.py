@@ -172,22 +172,19 @@ class ArticleMetadata(BaseModel):
         text = text.strip()
         # text = remove_before(text, _THEND).strip()
         text = text.removeprefix("```json").removesuffix("```").strip()
-        # if not text: return
-        try:
-            data = json.loads(text)
-            return ArticleMetadata(
-                raw=text,
-                headline=data.get("headline"),
-                intro=data.get("introduction"),
-                highlights=data.get("analysis") or data.get("highlights"),
-                insights=data.get("datapoints") or data.get("takeaways"),
-                summary=data.get("summary"),
-                predictions = data.get("predictions"),
-                keywords = data.get("keywords")
-            )
-        except json.JSONDecodeError as e:
-            print(text)
-            raise e
+
+        data = json.loads(text)
+        return ArticleMetadata(
+            raw=text,
+            headline=data.get("headline"),
+            intro=data.get("introduction"),
+            highlights=data.get("analysis") or data.get("highlights"),
+            insights=data.get("datapoints") or data.get("takeaways"),
+            summary=data.get("summary"),
+            predictions = data.get("predictions"),
+            keywords = data.get("keywords")
+        )
+        
 
         
 

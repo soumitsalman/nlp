@@ -149,7 +149,7 @@ ROLE=Content Summerizer at a newspaper publisher;
 TASK=Extract Headline,Introduction,Highlights,DataPoints,Keywords;
 INPUT=Topic:String\n\nDrafts:List<String>
 OUTPUT_FORMAT=JSON with following fields
-1. headline (String): A sentence that captures the primary who, what, whom and where of the article. Phrased a question.
+1. headline (String): A sentence that captures the primary who, what, whom and where of the article. Phrased as a question.
 2. introduction (String): A paragraph between 100-150 words that captures the key takeaways from the article.
 3. highlights (List<String>): 3 - 5 lines that capture the main events, trends and takeaways from the article so that the reader can get the gist without reading the entire content.
 4. datapoints (List<String>): 3 - 5 lines of data points that are important in shaping the narrative presented in the article.
