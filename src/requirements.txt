@@ -8,6 +8,7 @@ optimum[intel]
 optimum[onnxruntime]
 optimum[openvino]
 diffusers
+vllm
 openai
 llama-index
 tiktoken

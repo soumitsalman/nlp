@@ -75,7 +75,7 @@ def test_digestor():
 
     BATCH_SIZE = 2
     data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
-    digestor = agents.from_path(
+    digestor = agents.text2text_agent_from_path(
         model_path="soumitsr/led-base-article-digestor",
         max_input_tokens=4096,
         max_output_tokens=400,
@@ -170,9 +170,9 @@ def test_deterministic_reject():
 
 
 def test_article_parser():
-    from src.models import GeneratedArticle
+    from src.models import ArticleMetadata
     inputs = load_json(os.path.join(os.path.dirname(__file__), "text-for-generator.json"))
-    articles = [GeneratedArticle.parse_markdown(inp["content"]) for inp in inputs]
+    articles = [ArticleMetadata.parse_markdown(inp["content"]) for inp in inputs]
     for a in articles:
         ic(a.title, a.intro, a.analysis, a.insights, a.verdict, a.predictions, a.keywords)
 
@@ -196,7 +196,7 @@ def test_digestor_perf():
     ]
     for path in model_paths:
         
-        digestor = agents.from_path(
+        digestor = agents.text2text_agent_from_path(
             model_path=path,
             max_input_tokens=4096,
             max_output_tokens=400,

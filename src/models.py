@@ -158,13 +158,13 @@ M_PREDICTION = ["## Prediction", "## Predictions"]
 M_KEYWORDS = ["## Keywords"]
 A_FIELDS = list(chain(*[M_TITLE, M_INTRODUCTION, M_ANALYSIS, M_INSIGHTS, M_VERDICT, M_PREDICTION, M_KEYWORDS]))
 
-class GeneratedArticle(BaseModel):
+class ArticleMetadata(BaseModel):
     raw: str
-    title: str = Field(default=None)
+    headline: Optional[str] = Field(default=None)
     intro: Optional[str] = Field(default=None)
-    analysis: Optional[list[str]] = Field(default=[])
+    highlights: Optional[list[str]] = Field(default=[])
     insights: Optional[list[str]] = Field(default=[])
-    summary: str = Field(default="")
+    summary: Optional[str] = Field(default=None)
     predictions: Optional[list[str]] = Field(default=[])
     keywords: Optional[list[str]] = None
 
@@ -176,11 +176,11 @@ class GeneratedArticle(BaseModel):
         
         try:
             data = json.loads(text)
-            return GeneratedArticle(
+            return ArticleMetadata(
                 raw=text,
-                title=data.get("title"),
-                intro=data.get("intro"),
-                analysis=data.get("analysis") or data.get("highlights"),
+                headline=data.get("headline"),
+                intro=data.get("introduction"),
+                highlights=data.get("analysis") or data.get("highlights"),
                 insights=data.get("datapoints") or data.get("takeaways"),
                 summary=data.get("summary"),
                 predictions = data.get("predictions"),
@@ -205,11 +205,11 @@ class GeneratedArticle(BaseModel):
         split_keywords = lambda line: [kw.strip().removesuffix('.') for kw in line.split(',') if len(kw)<=30]
         chain_lines = lambda fnames: filter(lambda line: bool(line), chain(*(fields.get(fname) for fname in fnames)))
         try:
-            return GeneratedArticle(
+            return ArticleMetadata(
                 raw=text,
-                title=next(chain_lines(M_TITLE), ""),
+                headline=next(chain_lines(M_TITLE), ""),
                 intro="\n".join(chain_lines(M_INTRODUCTION)),
-                analysis=chain_lines(M_ANALYSIS),
+                highlights=chain_lines(M_ANALYSIS),
                 insights=chain_lines(M_INSIGHTS),
                 summary="\n".join(chain_lines(M_VERDICT)),
                 predictions=chain_lines(M_PREDICTION),
