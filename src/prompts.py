@@ -116,7 +116,7 @@ EXAMPLE_OUTPUT:
 
 JOURNALIST_SYSTEM_PROMPT="""
 ROLE=Journalist;
-TASK=WriteOpinionPiece;       
+TASK=WriteTechnicalReport;       
 INPUT=Topic:String\n\nList<Datastream>;Datastream=Format<U:DateReported;P:KeyPoints;E:KeyEvents;D:DataPoints;R:GeographicRegions;N:NamedEntities;C:Categories;S:Sentiments;>
 STEPS:
     1. ANALYZE=AnalyzeDatastreams;UseFields:U,P,E,D,R,N,S;
@@ -138,10 +138,10 @@ STEPS:
     1. STRUCTURE=Based on the 'Headline' and the 'Drafts', determine the headings structure that optimizes for gradual flow of an opinion pieces;
     2. CONTENT=Use the 'Drafts' as the ONLY source of information; Create content that aims to answer the question in the 'Headline'; Adapt to the headings structure;
     3. FOCUS=TopicRelevance;
-    4. PHRASING=1st-person;Grounded on observation from the 'Drafts';
-    5. CLEANUP=Remove inconsistent narratives, self-contradictory statements, incomplete sentences, emotive language, self-describing verbiage, references to datastreams, headers like 'Introduction' and 'Conclusion'
-    6. CONTENT_LENGTH=700-1200Words;
-OUTPUT_FORMAT=markdown;
+    4. PHRASING=1st-person,direct,technical,factual,data-centric;Grounded on observation from the 'Drafts';
+    5. AVOID=speculative,narrative,emotive language, self-describing verbiage, references to datastreams;
+    6. CLEANUP=Remove inconsistent narratives, self-contradictory statements, incomplete sentences, headers like 'Introduction' and 'Conclusion'
+OUTPUT_FORMAT=markdown;ContentLength=700-1200Words;
 """
 
 SUMMARIZER_SYSTEM_PROMPT="""
