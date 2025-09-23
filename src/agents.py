@@ -81,7 +81,7 @@ class TransformerText2TextClient(LMClientBase):
         self.dtype = torch.bfloat16
         self.max_output_tokens = max_output_tokens
         self.tokenizer = LocalTokenizer(model_id, max_input_tokens, max_output_tokens, self.device)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, torch_dtype=self.dtype, device_map=self.device).to(self.device)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_id, dtype=self.dtype, device_map=self.device).to(self.device)
 
     def run(self, prompt, **kwargs):
         import torch
@@ -357,12 +357,9 @@ class DiffuserImageGenerationAgent(LMAgentBase):
         self.num_inference_steps = num_inference_steps
         self.height = height
         self.width = width
-        self.pipe = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
+        self.pipe = DiffusionPipeline.from_pretrained(model_id, dtype=torch.float16, variant="fp16")
         if torch.cuda.is_available(): self.pipe = self.pipe.to("cuda")
         super().__init__(None, None, output_parser)
-        # Configure to use CPU and all available threads
-        # self.pipe.enable_sequential_cpu_offload()
-        # torch.set_num_threads(os.cpu_count())
 
     def run(self, user_msg: str):
         import torch
