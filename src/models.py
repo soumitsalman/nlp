@@ -158,23 +158,27 @@ M_PREDICTION = ["## Prediction", "## Predictions"]
 M_KEYWORDS = ["## Keywords"]
 A_FIELDS = list(chain(*[M_TITLE, M_INTRODUCTION, M_ANALYSIS, M_INSIGHTS, M_VERDICT, M_PREDICTION, M_KEYWORDS]))
 
-class ArticleMetadata(BaseModel):
-    raw: str
-    headline: str = Field(default=None)
+class Metadata(BaseModel):
+    headline: str = Field(description="Headline for the article. Length <= 20 Words")
+    question: Optional[str] = Field(default=None, description="Specific question that the article addresses. Length <= 20 Words")
+    highlights: list[str] = Field(description="List of highlights and data points. each highlight length <= 20 Words")
+    keywords: list[str] = Field(description="List of keywords and names. each keyword length <= 3 Words")
+    banner_prompt: Optional[str] = Field(default=None, description="text-to-image LLM Prompt for generating article banner")
+
+    # deprecated fields
+    raw: Optional[str] = Field(default=None)    
     intro: Optional[str] = Field(default=None)
-    highlights: Optional[list[str]] = Field(default=[])
     insights: Optional[list[str]] = Field(default=[])
     summary: Optional[str] = Field(default=None)
     predictions: Optional[list[str]] = Field(default=[])
-    keywords: Optional[list[str]] = None
-
+    
     def parse_json(text: str):
         text = text.strip()
         # text = remove_before(text, _THEND).strip()
         text = text.removeprefix("```json").removesuffix("```").strip()
 
         data = json.loads(text)
-        return ArticleMetadata(
+        return Metadata(
             raw=text,
             headline=data.get("headline"),
             intro=data.get("introduction"),
@@ -205,7 +209,7 @@ class ArticleMetadata(BaseModel):
         split_keywords = lambda line: [kw.strip().removesuffix('.') for kw in line.split(',') if len(kw)<=30]
         chain_lines = lambda fnames: filter(lambda line: bool(line), chain(*(fields.get(fname) for fname in fnames)))
         try:
-            return ArticleMetadata(
+            return Metadata(
                 raw=text,
                 headline=next(chain_lines(M_TITLE), ""),
                 intro="\n".join(chain_lines(M_INTRODUCTION)),

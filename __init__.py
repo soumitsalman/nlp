@@ -25,7 +25,7 @@ __all__ = [
     "RemoteImageGenerationAgent",
     "DiffuserImageGenerationAgent",
     "Digest",
-    "ArticleMetadata",
+    "Metadata",
     "OPINION_SYSTEM_PROMPT",
     "NEWSRECAP_SYSTEM_PROMPT",
     "DIGEST_SYSTEM_PROMPT",

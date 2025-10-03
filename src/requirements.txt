@@ -14,4 +14,5 @@ llama-index
 tiktoken
 numpy
 retry
+pydantic
 icecream

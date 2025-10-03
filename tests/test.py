@@ -170,9 +170,9 @@ def test_deterministic_reject():
 
 
 def test_article_parser():
-    from src.models import ArticleMetadata
+    from src.models import Metadata
     inputs = load_json(os.path.join(os.path.dirname(__file__), "text-for-generator.json"))
-    articles = [ArticleMetadata.parse_markdown(inp["content"]) for inp in inputs]
+    articles = [Metadata.parse_markdown(inp["content"]) for inp in inputs]
     for a in articles:
         ic(a.title, a.intro, a.analysis, a.insights, a.verdict, a.predictions, a.keywords)
 
