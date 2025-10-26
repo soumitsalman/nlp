@@ -109,11 +109,11 @@ class Digest(BaseModel):
         
         return Digest(
             raw=response, 
-            keypoints=results.get("P:"),
-            keyevents=results.get("E:"),
-            datapoints=results.get("D:"),
-            entities=results.get("N:"),
-            regions=results.get("R:"),
+            keypoints=results.get("P:") or None,
+            keyevents=results.get("E:") or None,
+            datapoints=results.get("D:") or None,
+            entities=results.get("N:") or None,
+            regions=results.get("R:") or None,
         )
 
     # def parse_compressed(response: str):
