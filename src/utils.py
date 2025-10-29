@@ -70,3 +70,12 @@ def remove_after(text: str, sub: str) -> str:
     if index >= 0: return text[:index]
     return text
 
+def clear_gpu_cache():
+    import torch
+    import gc
+    """Clear GPU memory by running garbage collection and clearing CUDA cache if available"""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
