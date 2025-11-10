@@ -178,17 +178,17 @@ class ORTEmbeddings(Embeddings):
         return embs
 
 def from_path(
-    embedder_path: str, 
+    model_path: str, 
     context_len: int = 512,
     base_url: str = None,
     api_key: str = None
 ) -> Embeddings:
     # initialize digestor
-    if base_url: return RemoteEmbeddings(embedder_path, base_url, api_key, context_len)
-    if embedder_path.startswith(LLAMACPP_PREFIX): return LlamaCppEmbeddings(embedder_path.removeprefix(LLAMACPP_PREFIX), context_len)
-    if embedder_path.startswith(OPENVINO_PREFIX): return OVEmbeddings(embedder_path.removeprefix(OPENVINO_PREFIX), context_len)
-    if embedder_path.startswith(ONNX_PREFIX): return ORTEmbeddings(embedder_path.removeprefix(ONNX_PREFIX), context_len)
-    return TransformerEmbeddings(embedder_path, context_len)
+    if base_url: return RemoteEmbeddings(model_path, base_url, api_key, context_len)
+    if model_path.startswith(LLAMACPP_PREFIX): return LlamaCppEmbeddings(model_path.removeprefix(LLAMACPP_PREFIX), context_len)
+    if model_path.startswith(OPENVINO_PREFIX): return OVEmbeddings(model_path.removeprefix(OPENVINO_PREFIX), context_len)
+    if model_path.startswith(ONNX_PREFIX): return ORTEmbeddings(model_path.removeprefix(ONNX_PREFIX), context_len)
+    return TransformerEmbeddings(model_path, context_len)
 
     
 
