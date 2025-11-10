@@ -44,19 +44,11 @@ class Embeddings(ABC):
     
     def _merge_chunks(self, embeddings, start_idx: list[int], counts: list[int]):
         merged_embeddings = lambda start, count: np.mean(embeddings[start:start+count], axis=0).tolist()
-        with ThreadPoolExecutor(max_workers=os.cpu_count(), thread_name_prefix="merge_chunks") as exec:
-            embeddings = list(exec.map(merged_embeddings, start_idx, counts))
-        return embeddings
+        return list(map(merged_embeddings, start_idx, counts))
 
     @abstractmethod
     def _embed(self, texts: str|list[str]):
         raise NotImplementedError("Subclass must implement abstract method")
-    
-    # def embed(self, texts: str|list[str]):
-    #     chunks, start_idx, counts = self._create_chunks(texts)
-    #     embeddings = self._embed(chunks)
-    #     embeddings = self._merge_chunks(embeddings, start_idx, counts)
-    #     return embeddings[0] if isinstance(texts, str) else embeddings
     
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Takes a list of strings/large documents as input and chunks them into smaller pieces as needed based on the context length.
@@ -173,21 +165,17 @@ class ORTEmbeddings(Embeddings):
     context_len = None
 
     def __init__(self, model_path: str, context_len: int):
-        from optimum.onnxruntime import ORTModelForFeatureExtraction
-        from transformers import AutoTokenizer
+        from sentence_transformers import SentenceTransformer
 
         super().__init__(context_len)        
-        self.model = ORTModelForFeatureExtraction.from_pretrained(model_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.model = SentenceTransformer(model_path, backend="onnx", model_kwargs={'file_name': "model.onnx", 'provider': 'CPUExecutionProvider'})
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
         import torch
-        input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
         with torch.inference_mode(), torch.no_grad():
-            output_tokens = self.model(**input_tokens)
-            vecs = output_tokens.last_hidden_state.mean(axis=1)   
-        return vecs
+            embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+        return embs
 
 def from_path(
     embedder_path: str, 
