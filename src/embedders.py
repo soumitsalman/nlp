@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_CHUNKS = 8
 
-class Embeddings(ABC):
+class EmbedderBase(ABC):
     splitter = None
     context_len: int = None
 
@@ -70,33 +70,21 @@ class Embeddings(ABC):
     def __call__(self, texts: str|list[str]):
         """This takes a string or an list of strings as an input.
         This calls the embedder directly without chunking or truncation for faster response"""
-        if texts: return self._embed(texts).tolist()
+        if texts: return self._embed(texts).tolist()   
 
+    @abstractmethod
+    def _unload_model(self):
+        pass
 
-# local embeddings from llama.cpp
-class LlamaCppEmbeddings(Embeddings):
-    model_path = None
-    context_len = None
-    model = None
-    lock = None
-    def __init__(self, model_path: str, context_len: int):  
-        from llama_cpp import Llama
+    def __enter__(self):
+        return self
 
-        super().__init__(context_len)
-        self.lock = threading.Lock()
-        self.model_path = model_path
-        self.context_len = context_len
-        n_threads = min(1, os.cpu_count()-1)
-        self.model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_threads_batch=n_threads, n_threads=n_threads, embedding=True, verbose=False)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._unload_model()
+        return False
 
-    def _embed(self, texts):
-        with self.lock:
-            embeddings = self.model.create_embedding(texts)
-        if isinstance(texts, str): return embeddings['data'][0]['embedding']
-        return [data['embedding'] for data in embeddings['data']]
-
-class RemoteEmbeddings(Embeddings):
-    openai_client = None
+class RemoteEmbeddings(EmbedderBase):
+    model_client = None
     model_name: str
     context_len: int
 
@@ -104,85 +92,145 @@ class RemoteEmbeddings(Embeddings):
         from openai import OpenAI
 
         super().__init__(context_len)
-        self.openai_client = OpenAI(base_url=base_url, api_key=api_key, max_retries=3, timeout=10)
+        self.model_client = OpenAI(base_url=base_url, api_key=api_key, max_retries=3, timeout=10)
         self.model_name = model_name
         self.context_len = context_len    
        
     @retry(tries=2, delay=5, logger=logger)
     def _embed(self, texts):
-        embeddings = self.openai_client.embeddings.create(model=self.model_name, input=texts, encoding_format="float")
-        return [data.embedding for data in embeddings.data]
+        embeddings = self.model_client.embeddings.create(model=self.model_name, input=texts, encoding_format="float")
+        return [data.embedding for data in embeddings.data]    
+
+# local embeddings from llama.cpp
+class LlamaCppEmbeddings(EmbedderBase):
+    model_path = None
+    context_len = None
+    _model = None
+    lock = None
+    def __init__(self, model_path: str, context_len: int): 
+        super().__init__(context_len)
+        self.lock = threading.Lock()
+        self.model_path = model_path
+        self.context_len = context_len
+
+    def _embed(self, texts):
+        with self.lock:
+            embeddings = self.model.create_embedding(texts)
+        if isinstance(texts, str): return embeddings['data'][0]['embedding']
+        return [data['embedding'] for data in embeddings['data']]
     
-class TransformerEmbeddings(Embeddings):
-    model = None
+    @property
+    def model(self):
+        if not self._model:
+            from llama_cpp import Llama
+            n_threads = min(1, os.cpu_count()-1)
+            self._model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_threads_batch=n_threads, n_threads=n_threads, embedding=True, verbose=False)
+        return self._model
+
+    def _unload_model(self):
+        del self._model
+        self._model = None        
+        
+class TransformerEmbeddings(EmbedderBase):
+    _model = None
+    model_path = None
+    tokenizer_kwargs = None
 
     def __init__(self, model_path: str, context_len: int):
         import torch
-        from sentence_transformers import SentenceTransformer
 
         super().__init__(context_len)
-        tokenizer_kwargs = {
+        self.model_path = model_path
+        self.tokenizer_kwargs = {
             "truncation": True,
             "max_length": context_len,
             "padding": True
         }
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, device=self.device)
-        # else: self.model = SentenceTransformer(model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx"})
-        
+
     def _embed(self, texts: str|list[str]):
         import torch
         with torch.inference_mode(), torch.no_grad():
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
     
-class OVEmbeddings(Embeddings):
-    model = None
-    tokenizer = None
+    @property
+    def model(self):
+        if not self._model:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=self.tokenizer_kwargs, device=self.device)
+        return self._model
+
+    def _unload_model(self):
+        del self._model
+        self._model = None
+        clear_gpu_cache()
+    
+class OVEmbeddings(EmbedderBase):
+    _model = None
+    model_path = None
     context_len = None
 
     def __init__(self, model_path: str, context_len: int):
-        from optimum.intel.openvino import OVSentenceTransformer
-        from transformers import AutoTokenizer
-
-        super().__init__(context_len)        
-        self.model = OVSentenceTransformer.from_pretrained(model_path, compile={"num_threads": os.cpu_count()-1})
-        # self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        super().__init__(context_len)
+        self.model_path = model_path
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
         import torch
-        # input_tokens = self.tokenizer(texts, return_tensors="np", padding=True, truncation=True, max_length=self.context_len)
         with torch.no_grad(), torch.inference_mode():
-            vecs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
-            # output_tokens = self.model(**input_tokens)
-            # vecs = output_tokens.last_hidden_state.mean(axis=1)
-        return vecs
+            embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+        return embs
     
-class ORTEmbeddings(Embeddings):
-    model = None
-    tokenizer = None
+    @property
+    def model(self):
+        if not self._model:
+            from optimum.intel.openvino import OVSentenceTransformer
+            self._model = OVSentenceTransformer.from_pretrained(self.model_path, compile={"num_threads": os.cpu_count()-1})
+        return self._model
+
+    def _unload_model(self):
+        del self._model
+        self._model = None
+    
+class ORTEmbeddings(EmbedderBase):
+    _model = None
+    model_path = None
     context_len = None
 
     def __init__(self, model_path: str, context_len: int):
-        from sentence_transformers import SentenceTransformer
-
-        super().__init__(context_len)        
-        self.model = SentenceTransformer(model_path, backend="onnx", model_kwargs={'file_name': "model.onnx", 'provider': 'CPUExecutionProvider'})
+        super().__init__(context_len)
+        self.model_path = model_path
         self.context_len = context_len
+        self.tokenizer_kwargs = {
+            "truncation": True,
+            "max_length": context_len,
+            "padding": True
+        }
 
     def _embed(self, texts: str|list[str]):
         import torch
         with torch.inference_mode(), torch.no_grad():
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
+
+    @property
+    def model(self):
+        if not self._model:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.model_path,  cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=self.tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx", 'provider': 'CPUExecutionProvider'})
+        return self._model
+
+    def _unload_model(self):
+        del self._model
+        self._model = None
 
 def from_path(
     model_path: str, 
     context_len: int = 512,
     base_url: str = None,
     api_key: str = None
-) -> Embeddings:
+) -> EmbedderBase:
     # initialize digestor
     if base_url: return RemoteEmbeddings(model_path, base_url, api_key, context_len)
     if model_path.startswith(LLAMACPP_PREFIX): return LlamaCppEmbeddings(model_path.removeprefix(LLAMACPP_PREFIX), context_len)

@@ -1,6 +1,7 @@
 from .src import *
 from .src.embedders import *
 from .src.agents import *
+from .src.digestors import *
 from .src.models import *
 from .src.prompts import *
 from .src.utils import run_batch, truncate_batch
@@ -8,12 +9,16 @@ from .src.utils import run_batch, truncate_batch
 __all__ = [
     'embedders', 
     'agents', 
-    "Embeddings",
+    'digestors',
+    "EmbedderBase",
     "RemoteEmbeddings",
     "TransformerEmbeddings",
     "OVEmbeddings",
     "ORTEmbeddings",
     "LlamaCppEmbeddings",
+    "TransformerDigestor",
+    "OVDigestor",
+    "ORTDigestor",
     "TransformerText2TextClient",
     "OVText2TextClient",
     "ONNXText2TextClient",
