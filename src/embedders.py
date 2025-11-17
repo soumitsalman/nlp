@@ -128,6 +128,7 @@ class LlamaCppEmbeddings(EmbedderBase):
         return self._model
 
     def _unload_model(self):
+        if not self._model: return
         del self._model
         self._model = None        
         
@@ -162,6 +163,7 @@ class TransformerEmbeddings(EmbedderBase):
         return self._model
 
     def _unload_model(self):
+        if not self._model: return
         del self._model
         self._model = None
         clear_gpu_cache()
@@ -190,6 +192,7 @@ class OVEmbeddings(EmbedderBase):
         return self._model
 
     def _unload_model(self):
+        if not self._model: return
         del self._model
         self._model = None
     
@@ -222,6 +225,7 @@ class ORTEmbeddings(EmbedderBase):
         return self._model
 
     def _unload_model(self):
+        if not self._model: return
         del self._model
         self._model = None
 

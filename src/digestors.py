@@ -137,6 +137,7 @@ class TransformerDigestor(DigestorBase):
         return self._tokenizer
     
     def _unload_model(self):
+        if not self._model: return
         del self._model
         del self._tokenizer
         self._model = None
@@ -170,6 +171,7 @@ class OVDigestor(TransformerDigestor):
         return self._model
     
     def _unload_model(self):
+        if not self._model: return
         del self._model
         del self._tokenizer
         self._model = None
@@ -223,6 +225,7 @@ class ORTDigestor(TransformerDigestor):
         return self._model
     
     def _unload_model(self):
+        if not self._model: return
         del self._model
         del self._tokenizer
         self._model = None
