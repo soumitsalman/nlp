@@ -11,6 +11,7 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 _MAX_CHUNKS = 8
+VECTOR = list[float]
 
 class EmbedderBase(ABC):
     splitter = None
@@ -50,7 +51,7 @@ class EmbedderBase(ABC):
     def _embed(self, texts: str|list[str]):
         raise NotImplementedError("Subclass must implement abstract method")
     
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+    def embed_documents(self, texts: str|list[str]) -> VECTOR|list[VECTOR]:
         """Takes a list of strings/large documents as input and chunks them into smaller pieces as needed based on the context length.
         For each document it returns a mean of the embeddings of the chunks."""
         if not texts: return
@@ -60,7 +61,7 @@ class EmbedderBase(ABC):
         embeddings = self._merge_chunks(embeddings, start_idx, counts)
         return embeddings[0] if isinstance(texts, str) else embeddings
     
-    def embed_query(self, query: str) -> list[float]:
+    def embed_query(self, query: str) -> VECTOR:
         """Embeds a single string as a query. It prepends `query: ` to the input. 
         It processes the string without chunking or truncation for faster response."""
         if not query: return
