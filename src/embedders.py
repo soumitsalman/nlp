@@ -11,6 +11,7 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 _MAX_CHUNKS = 8
+_OVERFLOW=32
 VECTOR = list[float]
 
 class EmbedderBase(ABC):
@@ -25,13 +26,15 @@ class EmbedderBase(ABC):
         from llama_index.core.text_splitter import SentenceSplitter
         if not self.splitter: 
             self.splitter = SentenceSplitter.from_defaults(
-            chunk_size=self.context_len-32, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
+            chunk_size=self.context_len-_OVERFLOW, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
             chunk_overlap=0, 
             paragraph_separator="\n", 
             include_metadata=False, 
             include_prev_next_rel=False
         )
-        return self.splitter.split_text(text)[:_MAX_CHUNKS]       
+        chunks = self.splitter.split_text(text)[:_MAX_CHUNKS]
+        if len(chunks) > 1 and len(chunks[-1]) < _OVERFLOW: chunks = chunks[:-1]
+        return chunks
 
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
         texts = texts if isinstance(texts, list) else [texts]
