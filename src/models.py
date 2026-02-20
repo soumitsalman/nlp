@@ -29,7 +29,9 @@ C_SENTIMENTS = "S:"
 COMPRESSED_FIELDS = [C_KEYPOINTS, C_KEYEVENTS, C_DATAPOINTS, C_REGIONS, C_ENTITIES, C_CATEGORIES, C_SENTIMENTS]
 UNDETERMINED = ["n/a", "none", "undetermined", "not specified", "not mentioned"]
 
-clean_up = lambda items: list(filter(lambda x: x.lower() not in UNDETERMINED, distinct_items(items)))
+# clean_up = lambda items: list(filter(lambda x: x.lower() not in UNDETERMINED, distinct_items(items)))
+strip_non_alphanumeric = lambda text: re.sub(r'^\W+|\W+$', '', text)
+cleanup_list = lambda items: list(filter(lambda x: bool(x), map(strip_non_alphanumeric, items)))
 
 class Digest(BaseModel):
     raw: str
@@ -38,9 +40,18 @@ class Digest(BaseModel):
     keyevents: Optional[list[str]] = Field(default=[])
     datapoints: Optional[list[str]] = Field(default=[])
     categories: Optional[list[str]] = Field(default=[])
+    sentiments: Optional[list[str]] = Field(default=[])
     entities: Optional[list[str]] = Field(default=[])
     regions: Optional[list[str]] = Field(default=[])
-    sentiments: Optional[list[str]] = Field(default=[])
+
+    def model_post_init(self, __context):
+        if self.keypoints: self.keypoints = cleanup_list(self.keypoints)
+        if self.keyevents: self.keyevents = cleanup_list(self.keyevents)
+        if self.datapoints: self.datapoints = cleanup_list(self.datapoints)
+        if self.categories: self.categories = cleanup_list(self.categories)
+        if self.sentiments: self.sentiments = cleanup_list(self.sentiments)
+        if self.entities: self.entities = cleanup_list(self.entities)
+        if self.regions: self.regions = cleanup_list(self.regions)
 
     def parse_json(response: str):  
         try:      
@@ -116,36 +127,6 @@ class Digest(BaseModel):
             regions=results.get("R:") or None,
         )
 
-    # def parse_compressed(response: str):
-    #     response = response.strip()
-    #     if not response: return
-        
-    #     digest = Digest(raw = response)
-    #     parts = [part.strip() for part in split_parts(response, r'[;\|\n]+') if part != UNDETERMINED]
-    #     add_to = None
-    #     for part in parts:
-    #         prefix = next((field for field in COMPRESSED_FIELDS if part.startswith(field)), None)
-
-    #         if prefix:
-    #             part = part.removeprefix(prefix)
-    #             add_to = prefix
-            
-    #         if add_to == C_REGIONS:
-    #             if isalphaorspace(part): digest.regions.append(part)
-    #         elif add_to == C_ENTITIES:
-    #             digest.entities.append(part)
-    #         elif add_to == C_CATEGORIES:
-    #             if isalphaorspace(part): digest.categories.append(part)
-    #         elif add_to == C_SENTIMENTS:
-    #             if part.isalpha(): digest.sentiments.append(part)
-
-    #     digest.regions = clean_up(digest.regions)
-    #     digest.entities = clean_up(digest.entities)
-    #     digest.categories = clean_up(digest.categories)
-    #     digest.sentiments = clean_up(digest.sentiments)
-
-    #     return digest
-
 _THSTART = "<think>"
 _THEND = "</think>"
 M_TITLE_PREFIX = ["Topic:", "Topics:", "Intelligence Briefing:", "News Recap:"]
@@ -188,9 +169,6 @@ class Metadata(BaseModel):
             predictions = data.get("predictions"),
             keywords = data.get("keywords")
         )
-        
-
-        
 
     def parse_markdown(text: str):
         text = text.strip()
