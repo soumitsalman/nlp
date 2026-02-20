@@ -31,7 +31,7 @@ UNDETERMINED = ["n/a", "none", "undetermined", "not specified", "not mentioned"]
 
 # clean_up = lambda items: list(filter(lambda x: x.lower() not in UNDETERMINED, distinct_items(items)))
 strip_non_alphanumeric = lambda text: re.sub(r'^\W+|\W+$', '', text)
-cleanup_list = lambda items: list(filter(lambda x: bool(x), map(strip_non_alphanumeric, items)))
+cleanup_list = lambda items: list(set(filter(None, map(strip_non_alphanumeric, items))))
 
 class Digest(BaseModel):
     raw: str
