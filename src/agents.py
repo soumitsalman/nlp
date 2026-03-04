@@ -1,3 +1,5 @@
+# DEPRECATED
+
 import base64
 import os
 import logging

@@ -1,38 +1,139 @@
-# Fine-Tuning for Extracting Digests from News, Blogs, Articles, and Social Media Posts
-This repo contains code for generating dataset and fine-tuning a smaller language models (< 1B) so that they can perform at a similar maturity level of a larger language models when it comes to simpler tasks such as:
-- Generating titles and summaries
-- Extracting highlights, named entities, and content domains
-- Responding using the `json` response format.
+# Coffeemaker — Embeddings & Digest Utilities
 
-## Dataset Generation
-The input content consists of news articles, blogs, and social media posts collected from various RSS feeds, subreddits, and Hacker News (YCombinator). The input content was converted to markdown format (to reduce verbosity) and truncated to 2048 tokens (not trying to summarize a whole book here).
+Professional, lightweight utilities for two common NLP pipelines:
 
-The output content was generated using a combination of larger language models such as `microsoft/WizardLM-8x22`, `google/gemma-3-27b`, and `Qwen/QwQ-32B` as an initial pass. Post-generation, these went through selective human intervention for cleanup. The output is always in `json` format. The outputs can have different combinations of the following fields:
-- title
-- summary
-- highlights
-- names
-- domains
-Labels for each data row indicate which fields are in the output of that row.
+- Embedding generation (vectorize text for retrieval and semantic search)
+- Digest generation (produce structured JSON with title, summary, highlights, named entities, and domains)
 
-The primary focus during data generation was the following:
-- Ability to preserve the tonality and the "voice" the original content was written in
-- Discouraging click-bait title generation
-- Translating content from other languages
-- Adherence to `json` as a response format
-- Ability to generate different combinations of multiple fields (title, summary, highlights, named entities, and content domain) in one shot without compromising content quality
-- Generating an actionable summary text in markdown format even if the overall output is in `json`
+The package exposes the core modules at the top level (imports work as `from nlp import embedders, digestors, models`). Examples in this README use the package-level imports.
 
-## Fine-tuning:
-Current Date: 03-31-2025
-**HW**: RTX A5000 (24 GB VRAM) + 12vCPU + 25 GB RAM
-**GPU Cloud**: [runpod.io](https://www.runpod.io)
-**Model**: 135M parameters + 4096 tokens context window
+## Installation
 
-**Lessons Learned**:
-Undocumented crap that doesn't make sense but yet here we are - 
-- `os.cpu_count()` will return the number of CPUs in the bare-metal under the hood and not what is specified in your container instance. e.g. 128 CPUs instead of 12. This will cause your threading to act like a dumb ass.
-- `per_device_train_batch_size` <= 96 and `gradient_accumulation_steps` <= 64 otherwise the system will die (OOM).
-- Use less that 400,000 rows of dataset at a time. Anything more than that will make your machine shit its pants. If the dataset is longer than 400K run multiple rounds of iterative training.
-- Unless the `chat_template` is one of the ones supported by `Unsloth`, `train_on_responses_only` will fail. For example - it dies on `SmolLM2-*-Instruct` models.
-- `SFTTrainer` and/or `Unsloth` will throw a fit if the dataset has a column named `labels`. If you do have it, use `dataset.remove_columns(["labels"])`
+Install runtime dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Quickstart
+
+Import the modules from the package and create clients using the `from_path(...)` factories.
+
+### Embedding example
+
+```python
+from nlp import embedders
+
+texts = [
+    "AI will change how developers build software.",
+    "Open-source models enable local experimentation."
+]
+
+# Create an embedder. Provide a remote base_url/api_key for API-backed embeddings
+# or a local model identifier/path for on-device embeddings.
+embedder = embedders.from_path(model_path="sentence-transformers/all-MiniLM-L6-v2", context_len=512)
+with embedder:
+    vectors = embedder.embed_documents(texts)        # -> list[list[float]]
+    qvec = embedder.embed_query("What will change in developer tooling?")  # -> list[float]
+
+print(f"Generated {len(vectors)} vectors; first vector length: {len(vectors[0])}")
+```
+
+### Digest example
+
+```python
+from nlp import digestors, models
+
+article = "Long article text or markdown content to summarize and extract entities from..."
+
+# Create a digestor and provide an output parser to convert raw model output into a typed model
+digestor = digestors.from_path(
+    model_path="soumitsr/led-base-article-digestor",
+    max_input_tokens=1024,
+    max_output_tokens=256,
+    output_parser=models.Digest.parse_markdown
+)
+
+with digestor:
+    result = digestor.run(article)
+
+if isinstance(result, models.Digest):
+    print(result.raw)
+    print(result.keypoints)
+else:
+    print(result)
+```
+
+#### Batching
+
+```python
+inputs = [article, article]
+with digestor:
+    digests = digestor.run_batch(inputs)  # -> list[models.Digest | str]
+```
+
+## Backend selection
+
+The `from_path(...)` factories automatically select a backend based on the model path prefix. Supported backends:
+
+| Prefix | Backend | Use case |
+|--------|---------|----------|
+| (none, default) | HuggingFace Transformer (or Sentence Transformer for embedders) | Local model from HuggingFace Hub or local path |
+| `onnx://` | ONNX Runtime | Optimized inference on CPU/GPU with ONNX models |
+| `openvino://` | OpenVINO | Intel-optimized models for CPU inference |
+| `llamacpp://` | llama.cpp | Quantized models for lightweight local inference |
+| `https://` | OpenAI-compatible API | Remote API endpoints (e.g., OpenAI, custom servers) |
+
+Examples:
+
+```python
+# HuggingFace Transformer (default)
+embedder = embedders.from_path("sentence-transformers/all-MiniLM-L6-v2", context_len=512)
+
+# ONNX backend
+embedder = embedders.from_path("onnx://./model.onnx", context_len=512)
+
+# OpenVINO backend
+embedder = embedders.from_path("openvino://./model_ir.xml", context_len=512)
+
+# llama.cpp backend
+embedder = embedders.from_path("llamacpp://./model.gguf", context_len=512)
+
+# OpenAI-compatible remote API
+embedder = embedders.from_path(
+    model_path="text-embedding-3-small",  # model name or ID
+    context_len=512,
+    base_url="https://api.openai.com/v1",
+    api_key="sk-..."
+)
+```
+
+## API summary
+
+- `embedders.from_path(model_path, context_len, base_url=None, api_key=None)` -> returns an `EmbedderBase` implementation
+  - `embed_documents(text_or_list)` -> `list[list[float]]` or `list[float]` for a single string
+    - When input text exceeds the model's context window, the backend automatically chunks the input into smaller pieces, embeds each chunk separately, and then computes the **mean** of all chunk embeddings to produce a single vector representing the full document.
+  - `embed_query(query)` -> `list[float]`
+  - supports context manager usage (`with embedder:`)
+
+- `digestors.from_path(model_path, max_input_tokens, max_output_tokens, base_url=None, api_key=None, output_parser=None)` -> returns a `DigestorBase` implementation
+  - `run(input_msg)` -> `str` (raw) or the `output_parser` return value (commonly `models.Digest` or a `dict`)
+  - `run_batch(list_of_inputs)` -> `list` of same return items as `run`
+
+## Return types
+
+- Embeddings: `list[float]` (vector) or `list[list[float]]` (multiple vectors)
+- Digests: `str` (raw text) or structured Pydantic models such as `models.Digest` / `models.Metadata` when using parser callables
+
+## Implementation notes
+
+- The package exposes backends for remote and local models. See `nlp/src/embedders.py` for available embedder implementations (`RemoteEmbeddings`, `LlamaCppEmbeddings`, `TransformerEmbeddings`, `OVEmbeddings`, `ORTEmbeddings`) and how `from_path` dispatches by prefix.
+- See `nlp/src/digestors.py` for the `TransformerDigestor`, `OVDigestor`, and `ORTDigestor` implementations and how `output_parser` is applied to results.
+- For structured outputs prefer using parser callables from `nlp/src/models.py` (`Digest.parse_markdown`, `Digest.parse_json`, `Metadata.parse_json`).
+
+## Contribution
+
+- Keep digests concise and faithful to the source tone.
+- Tune batch sizes for embeddings according to available memory and backend limits.
+
+See the `src` package for full implementation details and advanced configuration.
