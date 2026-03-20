@@ -4,9 +4,10 @@ accelerate
 optimum
 openvino
 onnxruntime
-optimum[intel] 
+optimum[intel]
 optimum[onnxruntime]
 optimum[openvino]
+gliner
 diffusers
 vllm
 openai
