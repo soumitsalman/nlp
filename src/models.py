@@ -50,22 +50,32 @@ COMPRESSED_FIELDS = [
 ]
 UNDETERMINED = ["n/a", "none", "undetermined", "not specified", "not mentioned"]
 
-# clean_up = lambda items: list(filter(lambda x: x.lower() not in UNDETERMINED, distinct_items(items)))
-strip_nonalphanum = lambda text: re.sub(r"^\W+|\W+$", "", text)
-remove_nonalphanum = lambda items: list(
-    set(filter(None, map(strip_nonalphanum, items)))
-)
-remove_nonticker = lambda items: [
-    item for item in items if len(item) > 5 and not item.isupper()
-]
+_MAX_NAME_LEN = 40
+_MAX_STOCK_TICKER_LEN = 5
+strip_nonalphanum = lambda text: re.sub(r"^[\W_]+|[\W_]+$", "", text)
+
+def valid_unique(items: list[str], additional_filter=lambda x: True):
+    if not items:
+        return items
+    return list({item.lower(): item for item in map(strip_nonalphanum, items) if item and additional_filter(item)}.values())
+
+def valid_names(items: list[str]):
+    return valid_unique(items, additional_filter=lambda x: len(x) <= _MAX_NAME_LEN)
+
+def valid_stock_tickers(items: list[str]):
+    return valid_unique(items, additional_filter=lambda x: len(x) <= _MAX_STOCK_TICKER_LEN)
 
 _VALIDATE_FUNC = {
-    "entities": remove_nonalphanum,
-    "regions": remove_nonalphanum,
-    "people": remove_nonalphanum,
-    "stock_tickers": remove_nonticker,
+    "keypoints": valid_unique,
+    "keyevents": valid_unique,
+    "datapoints": valid_unique,
+    "entities": valid_names,
+    "people": valid_names,
+    "regions": valid_names,
+    "products": valid_unique,
+    "organizations": valid_names,
+    "stock_tickers": valid_stock_tickers,    
 }
-
 
 class Digest(BaseModel):
     raw: str

@@ -302,6 +302,7 @@ class NamedEntityExtractor(DigestorBase):
         "city",
         "state",
         "country",
+        "location",
         "stock",
         "ticker",
         "stockticker",
@@ -317,6 +318,7 @@ class NamedEntityExtractor(DigestorBase):
         "city": "regions",
         "state": "regions",
         "country": "regions",
+        "location": "regions",
         "stock": "stock_tickers",
         "ticker": "stock_tickers",
         "stockticker": "stock_tickers",
@@ -340,9 +342,8 @@ class NamedEntityExtractor(DigestorBase):
                 self.model_path,
                 max_length=self.context_len,
                 map_location="cuda" if torch.cuda.is_available() else "cpu",
-                # torch_dtype=torch.bfloat16,
             )
-            self._entity_embeddings = self._model.encode_labels(self._LABELS, batch_size=len(self._LABELS))
+            self._label_embeddings = self._model.encode_labels(self._LABELS, batch_size=len(self._LABELS))
         return self._model
 
     def _run(self, prompt: str):
@@ -350,7 +351,7 @@ class NamedEntityExtractor(DigestorBase):
         with torch.inference_mode():
             entities = self.model.predict_with_embeds(
                 prompt, 
-                labels_embeddings=self._entity_embeddings, 
+                labels_embeddings=self._label_embeddings, 
                 labels=self._LABELS,
                 threshold=self.threshold
             )
@@ -359,7 +360,7 @@ class NamedEntityExtractor(DigestorBase):
     def _run_batch(self, prompts: list[str]):
         entities = self.model.batch_predict_with_embeds(
             prompts, 
-            labels_embeddings=self._entity_embeddings, 
+            labels_embeddings=self._label_embeddings, 
             labels=self._LABELS,
             threshold=self.threshold
         )
@@ -370,6 +371,8 @@ class NamedEntityExtractor(DigestorBase):
             return
         del self._model
         self._model = None
+        del self._label_embeddings
+        self._label_embeddings = None
         clear_gpu_cache()
 
     @classmethod
