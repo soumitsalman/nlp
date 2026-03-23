@@ -294,7 +294,8 @@ class NamedEntityExtractor(DigestorBase):
     confidence = 0.5
     _LABELS = [
         "person",
-        "peopleorganization",
+        "people",
+        "organization",
         "company",
         "institution",
         "business",
@@ -339,24 +340,28 @@ class NamedEntityExtractor(DigestorBase):
                 self.model_path,
                 max_length=self.context_len,
                 map_location="cuda" if torch.cuda.is_available() else "cpu",
+                # torch_dtype=torch.bfloat16,
             )
+            self._entity_embeddings = self._model.encode_labels(self._LABELS, batch_size=len(self._LABELS))
         return self._model
 
     def _run(self, prompt: str):
-        entities = self.model.inference(
-            prompt,
-            labels=self._LABELS,
-            threshold=self.threshold,
-            max_length=self.context_len,
-        )
-        return self._from_dict(entities[0]) if entities[0] else None
+        import torch
+        with torch.inference_mode():
+            entities = self.model.predict_with_embeds(
+                prompt, 
+                labels_embeddings=self._entity_embeddings, 
+                labels=self._LABELS,
+                threshold=self.threshold
+            )
+        return self._from_dict(entities) if entities else None
 
     def _run_batch(self, prompts: list[str]):
-        entities = self.model.inference(
-            prompts,
+        entities = self.model.batch_predict_with_embeds(
+            prompts, 
+            labels_embeddings=self._entity_embeddings, 
             labels=self._LABELS,
-            threshold=self.threshold,
-            max_length=self.context_len,
+            threshold=self.threshold
         )
         return [self._from_dict(group) if group else None for group in entities]
 
@@ -371,7 +376,7 @@ class NamedEntityExtractor(DigestorBase):
     def _from_dict(cls, group: list[dict]) -> Digest:
         res = defaultdict(list)
         for ent in group:
-            res[self._LABEL_FIELD_MAPPINGS[ent["label"]]].append(ent["text"])
+            res[cls._LABEL_FIELD_MAPPINGS[ent["label"]]].append(ent["text"])
         for k, v in res.items():
             res[k] = list({item.lower(): item for item in v}.values())
         return Digest(**res, raw="")
