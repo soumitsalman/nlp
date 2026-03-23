@@ -87,7 +87,22 @@ def test_digestor():
             [ic(r) for r in digestor.run_batch(items)]
             pbar.update(len(items))
 
+def test_extractor():
+    from tqdm import tqdm
+    from src import digestors, models
 
+    BATCH_SIZE = 2
+    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
+    digestor = digestors.NamedEntityExtractor(
+        "knowledgator/modern-gliner-bi-base-v1.0",
+        context_len=4096,
+        confidence=0.4
+    )
+    with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
+        for i in range(0, len(data), BATCH_SIZE):
+            items = [d['content'] for d in data[i:i+BATCH_SIZE]]
+            [ic(r) for r in digestor.run_batch(items)]
+            pbar.update(len(items))
 
 def test_digest_parser():
     from src.models import Digest
@@ -338,5 +353,6 @@ if __name__ == "__main__":
     # test_digestor_perf()
     # test_digest_parser()
     # test_image_generator()
-    test_local_image_generator()
+    # test_local_image_generator()
+    test_extractor()
    
