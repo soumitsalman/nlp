@@ -19,12 +19,14 @@ log = logging.getLogger(__name__)
 
 
 class DigestorBase(ABC):
-    model_path: str = None
+    model_path: str
+    context_len: int
     system_prompt: str = None
     output_parser: Callable = None
 
-    def __init__(self, model_path: str, system_prompt: str, output_parser: Callable):
+    def __init__(self, model_path: str, context_len: int, system_prompt: str, output_parser: Callable):
         self.model_path = model_path
+        self.context_len = context_len
         self.system_prompt = system_prompt
         self.output_parser = output_parser
 
@@ -75,16 +77,16 @@ class LocalTokenizer:
     def __init__(
         self,
         model_id,
-        max_input_tokens: int,
+        context_len: int,
         max_output_tokens: int = None,
         device: str = None,
     ):
         from transformers import AutoTokenizer
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id, max_length=max_input_tokens, use_fast=True
+            model_id, max_length=context_len, use_fast=True
         )
-        self.max_input_tokens = max_input_tokens
+        self.max_input_tokens = context_len
         self.max_output_tokens = max_output_tokens
         self.device = device
         if not self.tokenizer.pad_token:
@@ -111,7 +113,6 @@ class LocalTokenizer:
 
 class TransformerDigestor(DigestorBase):
     device: str = None
-    max_input_tokens: int = 0
     max_output_tokens: int = 0
     _tokenizer = None
     _model = None
@@ -119,18 +120,19 @@ class TransformerDigestor(DigestorBase):
     def __init__(
         self,
         model_path: str,
-        max_input_tokens: int,
+        context_len: int,
         max_output_tokens: int,
         output_parser: Callable,
     ):
         import torch
 
         super().__init__(
-            model_path=model_path, system_prompt=None, output_parser=output_parser
+            model_path=model_path, 
+            context_len=context_len, 
+            system_prompt=None, output_parser=output_parser
         )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.bfloat16
-        self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
 
     def _run(self, prompt):
@@ -176,7 +178,7 @@ class TransformerDigestor(DigestorBase):
         if not self._tokenizer:
             self._tokenizer = LocalTokenizer(
                 self.model_path,
-                self.max_input_tokens,
+                self.context_len,
                 self.max_output_tokens,
                 self.device,
             )
@@ -328,8 +330,11 @@ class NamedEntityExtractor(DigestorBase):
     def __init__(
         self, model_path: str, context_len: int = 2048, confidence=0.5
     ) -> None:
-        self.model_path = model_path
-        self.context_len = context_len
+        super().__init__(
+            model_path=model_path, 
+            context_len=context_len, 
+            system_prompt=None, output_parser=None
+        )
         self.threshold = confidence
 
     @property
@@ -389,7 +394,7 @@ def from_path(
     model_path: str,
     base_url: str = None,
     api_key: str = None,
-    max_input_tokens: int = None,
+    context_len: int = None,
     max_output_tokens: int = None,
     system_prompt: str = None,
     output_parser: Callable = None,
@@ -401,21 +406,21 @@ def from_path(
     if model_path.startswith(OPENVINO_PREFIX):
         return OVDigestor(
             model_path,
-            max_input_tokens=max_input_tokens,
+            context_len=context_len,
             max_output_tokens=max_output_tokens,
             output_parser=output_parser,
         )
     elif model_path.startswith(ONNX_PREFIX):
         return ORTDigestor(
             model_path,
-            max_input_tokens=max_input_tokens,
+            context_len=context_len,
             max_output_tokens=max_output_tokens,
             output_parser=output_parser,
         )
     else:
         return TransformerDigestor(
             model_path,
-            max_input_tokens=max_input_tokens,
+            context_len=context_len,
             max_output_tokens=max_output_tokens,
             output_parser=output_parser,
         )

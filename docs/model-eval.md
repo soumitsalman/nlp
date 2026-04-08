@@ -47,3 +47,8 @@
 | `run-diffusion/Juggernaut-Flux` | ⭐ Good | ~$0.009 | Higher quality, slower |
 | `stabilityai/sdxl-turbo` | ❌ Poor | ~$0.0002 | Poor quality |
 | `stabilityai/sd3.5-medium` | ❌ Poor | ~$0.03 | Mediocre output, high cost |
+
+## Named Entity Extraction
+| Model | Rating |
+|-------|--------|
+| `knowledgator/modern-gliner-bi-base-v1.0` | ⭐ Great | 

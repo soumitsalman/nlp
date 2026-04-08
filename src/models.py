@@ -65,13 +65,16 @@ def valid_names(items: list[str]):
 def valid_stock_tickers(items: list[str]):
     return valid_unique(items, additional_filter=lambda x: len(x) <= _MAX_STOCK_TICKER_LEN)
 
+def valid_regions(items: list[str]):
+    return list(map(lambda x: x.replace(".", ""), valid_names(items)))
+
 _VALIDATE_FUNC = {
     "keypoints": valid_unique,
     "keyevents": valid_unique,
     "datapoints": valid_unique,
     "entities": valid_names,
     "people": valid_names,
-    "regions": valid_names,
+    "regions": valid_regions,
     "products": valid_unique,
     "organizations": valid_names,
     "stock_tickers": valid_stock_tickers,    
