@@ -367,7 +367,8 @@ class NamedEntityExtractor(DigestorBase):
             prompts, 
             labels_embeddings=self._label_embeddings, 
             labels=self._LABELS,
-            threshold=self.threshold
+            threshold=self.threshold,
+            batch_size=len(prompts)
         )
         return [self._from_dict(group) if group else None for group in entities]
 
