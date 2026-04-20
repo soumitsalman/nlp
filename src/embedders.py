@@ -163,7 +163,7 @@ class TransformerEmbeddings(EmbedderBase):
     def model(self):
         if not self._model:
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_path, cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=self.tokenizer_kwargs, device=self.device)
+            self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device)
         return self._model
 
     def _unload_model(self):
