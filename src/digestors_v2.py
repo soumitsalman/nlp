@@ -169,13 +169,6 @@ def create_structured_output_msg(text):
         },
     ]
 
-def load_inputs(count=32):
-    return [create_msg(item['text']) for item in random.sample(load_data_from_directory("data/digests/*.json"), count)]
-
-
-def load_structured_output_inputs(count=32):
-    return [create_structured_output_msg(item['text']) for item in random.sample(load_data_from_directory("data/digests/*.json"), count)]
-
 
 def parse_structured_output_text(text: str, model_type: Type[BaseModel]) -> BaseModel:
     cleaned = _strip_json_fences(text)
