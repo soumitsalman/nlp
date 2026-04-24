@@ -75,16 +75,18 @@ def test_digestor():
     from tqdm import tqdm
     from src import digestors_v2, models_v2, utils
 
-    BATCH_SIZE = 16
+    BATCH_SIZE = 64
     
     data = load_json(os.path.join(test_dir, "texts-for-nlp.json"))
+    result = []
     with digestors_v2.DigestorStructuredOutput(
         model_name="LiquidAI/LFM2.5-1.2B-Instruct",
         output_model=models_v2.Digest,
         context_len=32768,
     ) as digestor:
         for chunk in tqdm(batched(data, BATCH_SIZE)):
-            [ic(r) for r in digestor.run_batch([d['content'] for d in chunk])]
+            result.extend(digestor.run_batch([d['content'] for d in chunk]))
+    save_json("digestor-structured-output-results", [r.model_dump(mode="json", exclude_unset=True, exclude_none=True, exclude_default=True) for r in result])
 
 def test_extractor():
     from tqdm import tqdm

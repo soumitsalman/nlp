@@ -49,16 +49,8 @@ class DigestorBase(ABC):
         raise NotImplementedError
 
     def run_batch(self, input_messages: list[str]):
-        outputs = self._llm.chat(self._create_prompts(input_messages), sampling_params=self._sampling_params, use_tqdm=False)
-        results = []
-        for output in outputs:
-            text = output.outputs[0].text if output.outputs else ""
-            try:
-                results.append(self._parse_output(text))
-            except Exception as e:
-                ic(e)
-                results.append(None)
-        return results
+        responses = self._llm.chat(self._create_prompts(input_messages), sampling_params=self._sampling_params, use_tqdm=False)
+        return [self._parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
 
 _INST_MSG = """
 EXTRACT {fields} FROM content IF specified

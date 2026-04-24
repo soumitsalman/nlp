@@ -1,10 +1,9 @@
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional, Union, get_args, get_origin
-from enum import Enum
 import types
-from uuid import UUID
+import re
 import textcase
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 class Digest(BaseModel):
     # keywords
@@ -562,7 +561,7 @@ _IMPACT_LEVELS = {"low", "medium", "high", "critical", "transformative"}
 def valid_impact_or_risk(val: Optional[str]):
     if val and val.lower() in _IMPACT_LEVELS: return val.lower()
 
-def valid_tags(items: list[str]):
+def valid_tags(items: str|list[str]):
     """Converts the tags into snake_case"""
     return list(map(textcase.snake, cleanup_names(items)))
 
@@ -574,14 +573,14 @@ _CLEANUP_FUNCTIONS = {
     "stock_tickers": valid_stock_tickers,    
     "entities": valid_tags,
     "tags": valid_tags,
-    "marco_driver": valid_tags,
-    "event_type": valid_tags,
+    # "marco_driver": valid_tags,
+    # "event_type": valid_tags,
     "impact_level": valid_impact_or_risk,
 }
 
 def cleanup_digest_fields(digest, __context):
     for field, cleanup_func in _CLEANUP_FUNCTIONS.items():
-        if val := getattr(digest, field):
+        if val := getattr(digest, field, None):
             setattr(digest, field, cleanup_func(val))
 
 # ────────────────────────────────────────────────
