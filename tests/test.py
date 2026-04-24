@@ -4,17 +4,19 @@ import json, re, random
 from dotenv import load_dotenv
 from icecream import ic
 from tqdm import tqdm
-
+from itertools import batched
 
 EMBEDDER_CONTEXT_LEN=512
 DIGESTOR_CONTEXT_LEN=4096
 
 load_dotenv()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-os.makedirs(".test", exist_ok=True)
+
+test_dir = os.path.dirname(os.path.abspath(__file__))
+os.makedirs(os.path.join(test_dir, ".test"), exist_ok=True)
 
 def to_filename(name: str) -> str:
-    return "./.test/" + re.sub(r'[^a-zA-Z0-9]', '-', str(name))
+    return os.path.join(test_dir, ".test", re.sub(r'[^a-zA-Z0-9]', '-', str(name)))
 
 def load_json(filename):
     with open(filename, 'r') as file:
@@ -71,28 +73,26 @@ def test_embedder():
 # @log_runtime(logger=logger)
 def test_digestor():
     from tqdm import tqdm
-    from src import prompts, agents, models, utils
+    from src import digestors_v2, models_v2, utils
 
-    BATCH_SIZE = 2
-    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
-    digestor = agents.text2text_agent_from_path(
-        model_path="soumitsr/led-base-article-digestor",
-        max_input_tokens=4096,
-        max_output_tokens=400,
-        output_parser=models.Digest.parse_compressed
-    )
-    with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
-        for i in range(0, len(data), BATCH_SIZE):
-            items = [d['content'] for d in data[i:i+BATCH_SIZE]]
-            [ic(r) for r in digestor.run_batch(items)]
-            pbar.update(len(items))
+    BATCH_SIZE = 16
+    
+    data = load_json(os.path.join(test_dir, "texts-for-nlp.json"))
+    with digestors_v2.DigestorStructuredOutput(
+        model_name="LiquidAI/LFM2.5-1.2B-Instruct",
+        output_model=models_v2.Digest,
+        context_len=32768,
+    ) as digestor:
+        for chunk in tqdm(batched(data, BATCH_SIZE)):
+            [ic(r) for r in digestor.run_batch([d['content'] for d in chunk])]
 
 def test_extractor():
     from tqdm import tqdm
     from src import digestors, models
 
     BATCH_SIZE = 2
-    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    data = random.sample(load_json(os.path.join(test_dir, "texts-for-nlp.json")), 10)
     digestor = digestors.NamedEntityExtractor(
         "knowledgator/modern-gliner-bi-base-v1.0",
         context_len=4096,
@@ -349,10 +349,10 @@ def test_local_image_generator():
 if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
-    # test_digestor()
+    test_digestor()
     # test_digestor_perf()
     # test_digest_parser()
     # test_image_generator()
     # test_local_image_generator()
-    test_extractor()
+    # test_extractor()
    

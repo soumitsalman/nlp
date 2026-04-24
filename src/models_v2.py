@@ -3,84 +3,31 @@ from typing import Any, Dict, List, Literal, Optional, Union, get_args, get_orig
 from enum import Enum
 import types
 from uuid import UUID
-
+import textcase
 from pydantic import BaseModel, Field, HttpUrl
 
-
-def typeinfo(annotation: Any) -> str:
-    """Render a readable type name from a Pydantic FieldInfo annotation."""
-
-    if annotation is None or annotation is type(None):  # noqa: E721
-        return "null"
-    if annotation is Any:
-        return "any"
-
-    # Primitive normalization (match requested output)
-    if annotation is int:
-        return "int"
-    if annotation is float:
-        return "float"
-    if annotation is bool:
-        return "bool"
-    if annotation is str:
-        return "str"
-
-    origin = get_origin(annotation)
-
-    # `Annotated[T, ...]` -> unwrap to `T`
-    if origin is getattr(types, "AnnotatedAlias", object()) or str(origin) == "typing.Annotated":
-        args = get_args(annotation)
-        return typeinfo(args[0]) if args else "any"
-    if origin is getattr(__import__("typing"), "Annotated", object()):
-        args = get_args(annotation)
-        return typeinfo(args[0]) if args else "any"
-
-    # `T | U` (py3.10+) and `Union[T, U]`
-    if origin is Union or isinstance(annotation, types.UnionType):
-        args = list(get_args(annotation))
-        non_none = [a for a in args if a is not type(None)]  # noqa: E721
-        if len(non_none) != len(args):
-            if len(non_none) == 1:
-                return f"{typeinfo(non_none[0])}|exclude empty"
-            return "|".join(typeinfo(a) for a in non_none) + "|exclude empty"
-        return "|".join(typeinfo(a) for a in args)
-
-    if origin in (list, List):
-        (item_t,) = get_args(annotation) or (Any,)
-        return f"list[{typeinfo(item_t)}]"
-
-    if isinstance(annotation, type):
-        # Normalize common typing-ish names while keeping unknowns readable
-        return getattr(annotation, "__name__", str(annotation))
-
-    # Fallback for uncommon typing constructs
-    return str(annotation).replace("typing.", "")
-
-# ────────────────────────────────────────────────
-# Base class — updated version
-# ────────────────────────────────────────────────
 class Digest(BaseModel):
-    # parsed data
+    # keywords
+    regions: List[str] = Field(default_factory=list, description="List of specified geographic regions/locations. ex: USA,EU,China etc. Exclude=grouped/aggregated qualifications - 30 countries.")
+    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. Exclude=generic,grouped/aggregated qualifications - 14 leaders.")
+    products: List[str] = Field(default_factory=list, description="List of specified products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. Exclude=generic,grouped/aggregated qualifications - 3 new products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. Exclude=generic,grouped/aggregated qualifications - 5 companies.")
+    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock tickers. ex: TSLA, GLD, NVDA etc.")    
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords. ex: agentic_ai,sovereign_compute,defense_tech etc.")
+    
+    # intelligence
     key_points: List[str] = Field(
-        default_factory=list, 
         description=(
-            "List of specified key events, facts, datapoints. "
-            "Format=complete-sentences. Include=who,what,where,when,how,impact. Limit=3to8. "
-            "Examples:\n"
-            "- Hedge funds shifted large positions in Asian markets after selling in the US and Europe\n"
-            "- US markets dropped 9.3% from all-time highs\n"
-            "- Kia unveiled new EV4 and Concept EV2 models at EV Day 2025\n"
-            "- Mozilla revised Firefox terms amid user backlash\n"
+            "List of key event sequence, facts, datapoints."
+            "Format=[TIME]→[ACTOR]→[ACTION]→[OBJECT]→[CONTEXT/HOW]→[IMMEDIATE RESULT]→[FOLLOW-ON EFFECT]→[IMPACT]."
+            "ex: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded → circuit breakers triggered during peak volatility → trading halted temporarily → liquidity thinned across exchanges → $2.1T in market value erased → investor sentiment shifted to risk-off"
         )
     )        
     macro_driver: Optional[str] = Field(
         None,
         description=(
-            "Primary geopolitical, trade, economic or technological driver of events. Short phrase."
-            "Examples: "
-            "us_iran_conflict, red_sea_disruption, tariff_volatility, "
-            "rare_earth_controls, arctic_shipping_rivalry, lithium_supply_ban, "
-            "africa_mineral_conflict, cyber_arms_race_escalation etc."
+            "Primary geopolitical, trade, economic or technological driver of events. Compressed phrase."
+            "ex: us_iran_conflict,red_sea_disruption,tariff_volatility,rare_earth_controls arctic_shipping_rivalry,africa_mineral_conflict,cyber_arms_race_escalation etc."
         ),
     )
     # "model_release, agent_launch, enterprise_adoption_case, safety_regulation_update, multimodal_breakthrough\n"
@@ -122,84 +69,63 @@ class Digest(BaseModel):
         ),
     )    
     future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory.")
-    headline: str = Field(description="1-sentence headline. Include=core_subjects,geographic_anchors,primary_stats,timescale,key_actor_driver,risk_reward. Length<=25words.")
+    headline: str = Field(description="Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
 
-    # search keywords
-    regions: List[str] = Field(default_factory=list, description="List of specified geographic regions/locations. Exclude=grouped/aggregated qualifications - 30 countries.")
-    people: List[str] = Field(default_factory=list, description="List of specified key people (ex: CEOs, political leaders). Exclude=generic,grouped/aggregated qualifications - 14 leaders.")
-    companies: List[str] = Field(default_factory=list, description="List of specified companies/organizations. Exclude=generic,grouped/aggregated qualifications - 5 companies.")
-    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock tickers.")
-    
-    tags: List[str] = Field(
-        default_factory=list,
-        description=(
-            "List of keywords usable for search,classification,clustering. "
-            "Examples: agentic_ai, sovereign_compute, defense_tech etc.",
-        )
-    )
+    def model_post_init(self, __context):
+        cleanup_digest_fields(self, __context)
 
     @classmethod
-    def schema(cls):
-        return "\n".join(
-            f"{fname}: {typeinfo(finfo.annotation)}|{finfo.description}"
-            for fname, finfo in cls.model_fields.items()
-        )
+    def model_text_schema(cls):
+        return text_schema(cls)
 
     def __str__(self):
-        return self.model_dump_json()
+        return text_value(self, field_delim="\n")
+
+    @property
+    def gist(self):
+        return text_value(self, item_delim="|", field_delim=";")
 
 # ────────────────────────────────────────────────
 # Domain-specific models (inherit from base)
 # ────────────────────────────────────────────────
 
-
 class AINewsDigest(Digest):
-    models_or_agents: List[str] = Field(default_factory=list, description="List of names/codenames of AI models, agents or frameworks mentioned (e.g. 'Grok-4', 'o3-mini', 'Perplexity PC agent')")
-    researchers: List[str] = Field(default_factory=list, description="List of names of key researchers, authors or quoted experts")
+    people: List[str] = Field(default_factory=list, description="List of names of key researchers, authors or quoted experts")
+    products: List[str] = Field(default_factory=list, description="List of specified products/models/technologies/agents/frameworks. ex: Grok, ChatGPT, Claude Opus, Linux. Exclude=generic,grouped/aggregated qualifications - 3 new products.")    
     benchmark_scores: List[str] = Field(default_factory=list, description="List of reported performance numbers on standard benchmarks (key: benchmark name, value: score)")
-    claimed_productivity_lift_pct: Optional[str] = Field(None, description="Reported % productivity/efficiency gain claimed for users or enterprises")
-    enterprise_adoption_rate_pct: Optional[str] = Field(None, description="Reported % companies (especially Fortune 500) already using or piloting the technology")
-    pricing_monthly_usd: Optional[str] = Field(None, description="Reported monthly subscription price in USD.")
-    valuation_or_market_size: Optional[str] = Field(None, description="Company valuation or projected market size in USD")
+    claimed_productivity_lift: Optional[str] = Field(None, description="Reported productivity/efficiency gain")
+    enterprise_adoption_rate: Optional[str] = Field(None, description="Reported adoption/usage rate")
+    price: Optional[str] = Field(None, description="Reported unit/subscription price")
+    valuation_or_market_size: Optional[str] = Field(None, description="Company valuation or projected market size")
 
 
 class CyberNewsDigest(Digest):
     # malware information
     threat_actors: List[str] = Field(default_factory=list, description="List of named or categorized attackers. Examples: LockBit, nation state, etc.",)
-    vulnerabilities: List[str] = Field(default_factory=list, description="List of CVE IDs, product names or zero-day descriptions mentioned")
+    vulnerabilities: List[str] = Field(default_factory=list, description="List of CVE IDs, product names or zero-day descriptions mentioned")    
     malware_family: Optional[str] = Field(None, description="Name of the malware family or ransomware strain if applicable")
     attack_speed: Optional[str] = Field(None)
     incident_type: Optional[str] = Field(None, description="Primary category of the cybersecurity event. Allowed: ransomware, supply_chain, zero_day, ai_enhanced, state_sponsored, shadow_ai, critical_infra etc.")
     # impact information
-    affected_entities: List[str] = Field(default_factory=list, description="List of organizations, sectors or number of users impacted")
-    records_breached: Optional[str] = Field(None)
+    products: List[str] = Field(default_factory=list, description="List of impacted/vulnerable products/services. Exclude=generic,grouped/aggregated qualifications - 3 new products.")
+    entities: List[str] = Field(default_factory=list, description="List of impacted/vulnerable organizations/sectors/users/scope. Exclude=generic,grouped/aggregated qualifications - 7 organizations.")
+    technical_impact: Optional[str] = Field(None, description="Specified quantitative technical consequences. Examples: 1000 records breach, 10h service outage etc.")
     financial_impact: Optional[str] = Field(None, description="Specified financial damage or cost of recovery in USD.")    
-    business_impact: Optional[str] = Field(None, description="Specified operational, financial, reputational or regulatory consequences")
+    business_impact: Optional[str] = Field(None, description="Specified operational, financial, reputational or regulatory consequences.")
+    compliance_impact: List[str] = Field(default_factory=list, description="List of specified policies,standards,laws,regulations as being triggered (SEC, CIRCIA, GDPR, etc.)")
     # remediation
-    recommended_actions: List[str] = Field(default_factory=list, description="List of specified defensive or mitigation steps" )
-    compliance_triggers: List[str] = Field(default_factory=list, description="Policies,standards,laws,regulations mentioned as being triggered or relevant (SEC, CIRCIA, GDPR, etc.)")
+    mitigations: List[str] = Field(default_factory=list, description="List of specified defensive/corrective/mitigation/recovery steps" )
 
 
 class HardwareNewsDigest(Digest):
     """Summary focused on chips, accelerators, compute infrastructure"""
 
-    products: List[str] = Field(default_factory=list, description="List of specified products/chips (e.g. 'H100', 'NVIDIA GH200')")
-    manufacturer: str = Field()
+    products: List[str] = Field(default_factory=list, description="List of specified products/chips (ex: NVIDIA H100, AMD MI300, AWS Trainium). Exclude=generic,grouped/aggregated qualifications - 3 new products.")
     use_cases: List[str] = Field(default_factory=list, description="List of intended/demonstrated uses. Examples: AI training, inference, HPC, edge computing. Limit=5",)
-    performance_improvement_x: Optional[str] = Field(
-        None, description="Speedup factor compared to previous generation. Include unit in value (e.g. '2.8x')."
-    )
-    power_efficiency_gain_pct: Optional[str] = Field(
-        None, description="Performance-per-watt improvement. Include unit in value (e.g. '15%')."
-    )
-    capex_investment_usd_billions: Optional[str] = Field(
-        None,
-        description="CapEx for data centers/fabs. Include unit in value (e.g. '$2.5 billion'). Only if >$1B announced.",
-    )
-    price_per_unit_usd: Optional[str] = Field(
-        None, description="Estimated or announced price per chip/unit. Include currency in value (e.g. '$10,000')."
-    )
-
+    performance_improvement: Optional[str] = Field(None, description="Speedup factor compared to previous generation. Include=value,unit,context (ex: 2.8x faster inference).")
+    power_efficiency: Optional[str] = Field(None, description="Power/energy usage gain/reduction. Include=unit,value (ex: 15% reduction).")
+    capex_investment: Optional[str] = Field(None,description="CapEx for data centers/fabs. Include=unit,value (ex: $2.5 billion)")
+    price: Optional[str] = Field(None, description="Reported unit/subscription price.")
 
 class RoboticsAVDronesNewsSummary(Digest):
     """Summary focused on robotics systems, autonomous vehicles, drones"""
@@ -611,4 +537,118 @@ class FinancialDocumentSummary(Digest):
     material_event_description: Optional[str] = Field(
         None, description="For 8-K: what triggered the filing"
     )
+
+
+
+# ────────────────────────────────────────────────
+# Post initialization cleanup
+# ────────────────────────────────────────────────
+
+_UNDETERMINED = {"n/a", "na", "none", "unmentioned", "not mentioned", "unspecified", "undetermined", "not specified", "not found"}
+_MAX_NAME_LEN = 40
+def cleanup_names(items: list[str]):
+    """Remove leading/trailing non-alphanumeric characters, filter out empty and undetermined values, and deduplicate while preserving original casing of first occurrence."""
+    if not items: return items
+
+    texts = map(lambda text: re.sub(r"^[\W_]+|[\W_]+$", "", text).strip(), items)
+    texts = filter(lambda tag: tag and len(tag) <= _MAX_NAME_LEN and tag.lower() not in _UNDETERMINED, texts)
+    return list({item.lower(): item for item in texts}.values())
+
+_MAX_TICKER_LEN = 5
+def valid_stock_tickers(items: list[str]):
+    return list(filter(lambda x: len(x) <= _MAX_TICKER_LEN and x.isupper(), cleanup_names(items)))
+
+_IMPACT_LEVELS = {"low", "medium", "high", "critical", "transformative"}
+def valid_impact_or_risk(val: Optional[str]):
+    if val and val.lower() in _IMPACT_LEVELS: return val.lower()
+
+def valid_tags(items: list[str]):
+    """Converts the tags into snake_case"""
+    return list(map(textcase.snake, cleanup_names(items)))
+
+_CLEANUP_FUNCTIONS = {
+    "regions": valid_tags,
+    "people": valid_tags,
+    "products": valid_tags,
+    "companies": valid_tags,
+    "stock_tickers": valid_stock_tickers,    
+    "entities": valid_tags,
+    "tags": valid_tags,
+    "marco_driver": valid_tags,
+    "event_type": valid_tags,
+    "impact_level": valid_impact_or_risk,
+}
+
+def cleanup_digest_fields(digest, __context):
+    for field, cleanup_func in _CLEANUP_FUNCTIONS.items():
+        if val := getattr(digest, field):
+            setattr(digest, field, cleanup_func(val))
+
+# ────────────────────────────────────────────────
+# Schema generation utilities
+# ────────────────────────────────────────────────
+
+def typeinfo(annotation: Any) -> str:
+    """Render a readable type name from a Pydantic FieldInfo annotation."""
+
+    if annotation is None or annotation is type(None):  # noqa: E721
+        return "null"
+    if annotation is Any:
+        return "any"
+
+    # Primitive normalization (match requested output)
+    if annotation is int:
+        return "int"
+    if annotation is float:
+        return "float"
+    if annotation is bool:
+        return "bool"
+    if annotation is str:
+        return "str"
+
+    origin = get_origin(annotation)
+
+    # `Annotated[T, ...]` -> unwrap to `T`
+    if origin is getattr(types, "AnnotatedAlias", object()) or str(origin) == "typing.Annotated":
+        args = get_args(annotation)
+        return typeinfo(args[0]) if args else "any"
+    if origin is getattr(__import__("typing"), "Annotated", object()):
+        args = get_args(annotation)
+        return typeinfo(args[0]) if args else "any"
+
+    # `T | U` (py3.10+) and `Union[T, U]`
+    if origin is Union or isinstance(annotation, types.UnionType):
+        args = list(get_args(annotation))
+        non_none = [a for a in args if a is not type(None)]  # noqa: E721
+        if len(non_none) != len(args):
+            if len(non_none) == 1:
+                return f"{typeinfo(non_none[0])}|exclude empty"
+            return "|".join(typeinfo(a) for a in non_none) + "|exclude empty"
+        return "|".join(typeinfo(a) for a in args)
+
+    if origin in (list, List):
+        (item_t,) = get_args(annotation) or (Any,)
+        return f"list[{typeinfo(item_t)}]"
+
+    if isinstance(annotation, type):
+        # Normalize common typing-ish names while keeping unknowns readable
+        return getattr(annotation, "__name__", str(annotation))
+
+    # Fallback for uncommon typing constructs
+    return str(annotation).replace("typing.", "")
+
+def text_schema(cls) -> str:
+    return "\n".join(
+        f"{fname}: {typeinfo(finfo.annotation)}|{finfo.description}"
+        for fname, finfo in cls.model_fields.items()
+    )
+
+def text_value(val, item_delim="|", field_delim="\n") -> str:
+    lines = []
+    for field_name in val.model_fields:
+        if value := getattr(val, field_name):
+            if isinstance(value, list): value_str = item_delim.join(str(v) for v in value)
+            else: value_str = str(value)
+            lines.append(f"{field_name}: {value_str}")
+    return field_delim.join(lines)
 

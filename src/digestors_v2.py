@@ -1,43 +1,89 @@
-from .models_v2 import Digest
 from pydantic import BaseModel
 from typing import Type, Optional, Any
 import json
 from vllm import LLM, SamplingParams
+from vllm.sampling_params import StructuredOutputsParams
 from transformers import AutoTokenizer
+from abc import ABC, abstractmethod
 
-class DigestorBase:
-    def __init__(self, model_name, max_tokens=32768, output_model: Type[BaseModel] = Digest, **sampling_params):
+from .utils import clear_gpu_cache
+from .models_v2 import Digest
+
+from icecream import ic
+
+DEFAULT_SAMPLING_PARAMS = {
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "top_k": 40,
+    "repetition_penalty": 1.05
+}
+DEFAULT_CONTEXT_LEN = 32768
+
+class DigestorBase(ABC):
+    def __init__(self, model_name: str, output_model: Type[BaseModel] = Digest, context_len: int = DEFAULT_CONTEXT_LEN, **sampling_params):
         self.model_name = model_name
-        self.max_tokens = max_tokens
         self.output_model = output_model
-        self.sampling_params = {**sampling_params, "max_tokens": max_tokens}
+        self.context_len = context_len
+        self.sampling_params = {**DEFAULT_SAMPLING_PARAMS, **sampling_params, "max_tokens": context_len}
         self._llm = None
         self._sampling_params = None
 
-    def _ensure_llm(self):
+    @abstractmethod
+    def __enter__(self):
         raise NotImplementedError
 
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._llm:
+            del self._llm
+            self._llm = None
+            del self._sampling_params
+            self._sampling_params = None
+            clear_gpu_cache()
+
+    @abstractmethod
+    def _create_prompts(self, input_messages: list[str]):
+        raise NotImplementedError
+
+    @abstractmethod
     def _parse_output(self, text: str):
         raise NotImplementedError
 
-    def _run_batch(self, messages):
-        outputs = self._ensure_llm().chat(messages, sampling_params=self._sampling_params, use_tqdm=True)
+    def run_batch(self, input_messages: list[str]):
+        outputs = self._llm.chat(self._create_prompts(input_messages), sampling_params=self._sampling_params, use_tqdm=False)
         results = []
         for output in outputs:
             text = output.outputs[0].text if output.outputs else ""
             try:
                 results.append(self._parse_output(text))
-            except Exception:
+            except Exception as e:
+                ic(e)
                 results.append(None)
         return results
 
-
+_INST_MSG = """
+EXTRACT {fields} FROM content IF specified
+=== content ===
+{text}
+"""
+ 
 class DigestorStructuredOutput(DigestorBase):
-    def _ensure_llm(self):
-        if self._llm is None:
-            from vllm import LLM, SamplingParams
-            from vllm.sampling_params import StructuredOutputsParams
+    _STRUCTURED_SYS_MSG = """RETURN=JSON object matching schema
+    EXCLUDE=unspecified data, implied assessments, assumptions
+    REMOVE=N/A,null values, empty fields
+    AVOID=markdown, prose, code fences, null placeholders, implied information, assumptions""" 
 
+    def _create_prompts(self, input_messages: list[str]):
+        prompt = lambda msg: [
+            {"role": "system", "content": self._STRUCTURED_SYS_MSG},
+            {"role": "user", "content": _INST_MSG.format(fields=",".join(self.output_model.model_fields.keys()), text=msg[:self.context_len>>2])},
+        ]
+        return [prompt(msg) for msg in input_messages]        
+
+    def _parse_output(self, text: str):
+        return self.output_model.model_validate_json(_strip_json_fences(text))
+    
+    def __enter__(self):
+        if not self._llm:
             self._llm = LLM(model=self.model_name)
             self._sampling_params = SamplingParams(
                 **self.sampling_params,
@@ -46,161 +92,65 @@ class DigestorStructuredOutput(DigestorBase):
                     disable_any_whitespace=True,
                 ),
             )
-        return self._llm
-
-    def _parse_output(self, text: str):
-        return parse_structured_output_text(text, self.output_model)
-
-    def run(self, messages):
-        return self._run_batch(messages)
+        return self
 
 
 class DigestorToolCall(DigestorBase):
-    def __init__(self, model_name, max_tokens=32768, output_model: Type[BaseModel] = Digest, **sampling_params):
-        super().__init__(model_name, max_tokens=max_tokens, output_model=output_model, **sampling_params)
-        self._chat_tools = build_chat_tools(self.output_model)
-
-    def _ensure_llm(self):
-        if self._llm is None:
-            from vllm import LLM, SamplingParams
-
+    def __enter__(self):
+        if not self._llm:
             self._llm = LLM(model=self.model_name)
             self._sampling_params = SamplingParams(**self.sampling_params)
-        return self._llm
+        return self
+
+    def _create_prompts(self, input_messages: list[str]):
+        prompt = lambda msg: [
+            {"role": "system", "content": f"List of tools: {json.dumps([self._build_tool_schema(self.output_model)])}"},
+            {"role": "user", "content":  _INST_MSG.format(fields=",".join(self.output_model.model_fields.keys()), text=msg[:self.context_len >> 2])},
+        ]
+        return [prompt(msg) for msg in input_messages]
 
     def _parse_output(self, text: str):
-        return parse_tool_call_text(text, self.output_model)
+        cleaned = _strip_json_fences(text)
+        payload = json.loads(cleaned)
 
-    def _run_batch(self, messages):
-        outputs = self._ensure_llm().chat(messages, sampling_params=self._sampling_params, tools=self._chat_tools, use_tqdm=True)
-        results = []
-        for output in outputs:
-            text = output.outputs[0].text if output.outputs else ""
-            try:
-                results.append(self._parse_output(text))
-            except Exception:
-                results.append(None)
-        return results
+        if isinstance(payload, list):
+            if len(payload) != 1:
+                raise ValueError(f"Expected exactly one tool call, got {len(payload)}")
+            payload = payload[0]
 
-    def run(self, messages):
-        return self._run_batch(messages)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Unexpected tool call payload type: {type(payload).__name__}")
 
+        if payload.get("name") == TOOL_NAME:
+            arguments = payload.get("arguments", {})
+        elif payload.get("function", {}).get("name") == TOOL_NAME:
+            arguments = payload["function"].get("arguments", {})
+        elif payload.get("tool_name") == TOOL_NAME:
+            arguments = payload.get("arguments", {})
+        else:
+            raise ValueError(f"Could not find {TOOL_NAME} tool call in payload: {payload}")
+
+        if isinstance(arguments, str):
+            arguments = json.loads(arguments)
+
+        return model_type.model_validate(arguments)
+
+
+    @classmethod
+    def _build_tool_schema(cls, model_type: Type[BaseModel]):
+        return {
+            "name": "extract_fields",
+            "description": "Extracts specified fields and contents from input.",
+            "parameters": model_type.model_json_schema(),
+        }
 
 
 def _strip_json_fences(text: str) -> str:
     return text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
-
 def _safe_model_dump(item: Optional[Digest]):
-    if item is None:
-        return None
+    if item is None: return None
     return item.model_dump(mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True)
 
-# TOOL CALL FOR INSTRUCTS
-# Avoid: markdown, prose, code fences, empty values, null values, assumptions, implied information
-# Response Format: JSON FUNCTION CALL ONLY
-
-TOOL_NAME = "extract_fields"
-DEFAULT_MAX_TEXT_CHARS = 32768
-
-
-def build_tool_schema(model_type: Type[BaseModel]):
-    return {
-        "name": TOOL_NAME,
-        "description": "Extracts specified fields and contents from input.",
-        "parameters": model_type.model_json_schema(),
-    }
-
-
-def build_chat_tools(model_type: Type[BaseModel]):
-    return [
-        {
-            "type": "function",
-            "function": build_tool_schema(model_type),
-        }
-    ]
-
-
-def build_system_message(model_type: Type[BaseModel]) -> str:
-    return f"List of tools: {json.dumps([build_tool_schema(model_type)])}"
-
-
-def build_user_message(model_type: Type[BaseModel], text: str, kind: str = "blog") -> str:
-    return f"EXTRACT FIELDS {','.join(model_type.model_fields.keys())} FROM\n```{kind}\n{text[:DEFAULT_MAX_TEXT_CHARS]}\n```"
-
-
-STRUCTURED_OUTPUT_SYS_MSG = """
-RETURN=JSON object matching schema
-EXCLUDE=unspecified data, implied assessments, assumptions
-REMOVE=empty or null fields
-AVOID=markdown, prose, code fences, null placeholders, implied information, assumptions
-"""
-STRUCTURED_OUTPUT_INST_MSG = """
-EXTRACT {fields} FROM content IF specified
-=== content ===
-{text}
-"""
-
-# PROMPT FOR EXTRACTION
-# SYS_MSG = """
-# RESPONSE FORMAT: JSON
-# SCHEMA: {schema}
-# AVOID: markdown, prose, code fences, empty values, null values, assumptions, implied information
-# """
-# INST_MSG = "EXTRACT {fields} FROM:\n{text}"
-
-def create_msg(text):
-    return [
-        {"role": "system", "content": build_system_message(Digest)},
-        {"role": "user", "content": build_user_message(Digest, text)},
-    ]
-
-
-def create_structured_output_msg(text):
-    return [
-        {"role": "system", "content": STRUCTURED_OUTPUT_SYS_MSG.format(schema=Digest.model_json_schema())},
-        {
-            "role": "user",
-            "content": STRUCTURED_OUTPUT_INST_MSG.format(
-                fields=",".join(Digest.model_fields.keys()),
-                kind="blog",
-                text=text[:DEFAULT_MAX_TEXT_CHARS],
-            ),
-        },
-    ]
-
-
-def parse_structured_output_text(text: str, model_type: Type[BaseModel]) -> BaseModel:
-    cleaned = _strip_json_fences(text)
-    return model_type.model_validate_json(cleaned)
-
-
-def parse_tool_call_text(text: str, model_type: Type[BaseModel]) -> BaseModel:
-    cleaned = _strip_json_fences(text)
-    payload = json.loads(cleaned)
-
-    if isinstance(payload, list):
-        if len(payload) != 1:
-            raise ValueError(f"Expected exactly one tool call, got {len(payload)}")
-        payload = payload[0]
-
-    if not isinstance(payload, dict):
-        raise ValueError(f"Unexpected tool call payload type: {type(payload).__name__}")
-
-    if payload.get("name") == TOOL_NAME:
-        arguments = payload.get("arguments", {})
-    elif payload.get("function", {}).get("name") == TOOL_NAME:
-        arguments = payload["function"].get("arguments", {})
-    elif payload.get("tool_name") == TOOL_NAME:
-        arguments = payload.get("arguments", {})
-    else:
-        raise ValueError(f"Could not find {TOOL_NAME} tool call in payload: {payload}")
-
-    if isinstance(arguments, str):
-        arguments = json.loads(arguments)
-
-    return model_type.model_validate(arguments)
-
-
-def serialize_outputs(outputs: list[Optional[Digest]]) -> list[Any]:
+def _serialize_outputs(outputs: list[Optional[Digest]]) -> list[Any]:
     return [_safe_model_dump(item) for item in outputs]
