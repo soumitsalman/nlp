@@ -7,7 +7,6 @@ from icecream import ic
 from tqdm import tqdm
 from itertools import batched
 
-from nlp.src import models, models_old
 
 EMBEDDER_CONTEXT_LEN=512
 DIGESTOR_CONTEXT_LEN=4096
@@ -76,39 +75,36 @@ def test_embedder():
 # @log_runtime(logger=logger)
 def test_digestor():
     from tqdm import tqdm
-    from src import digestors_v2, utils
+    from src import digestors, models
 
     logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     BATCH_SIZE = 16
     data_batches = list(batched(load_json(os.path.join(test_dir, "texts-for-nlp.json")), BATCH_SIZE))
     result = []
-    with digestors_v2.DigestorStructuredOutput(
+    with digestors.VLLMDigestor(
         model_name="LiquidAI/LFM2.5-1.2B-Instruct",
         output_model=models.Digest,
         context_len=32768,
     ) as digestor:
         for chunk in tqdm(data_batches, desc="Progress: ", unit="bean chunk", total=len(data_batches)):
-            result.extend(digestor.run_batch([d['content'] for d in chunk]))
-    save_json("digestor-structured-output-results", [r.model_dump(mode="json", exclude_unset=True, exclude_none=True) for r in result if r])
+            result.extend(ic(digestor.run_batch([d['content'] for d in chunk])))
+    save_json("digestor-structured-output-results", [digestors._safe_model_dump(r) for r in result])
 
 def test_extractor():
     from tqdm import tqdm
     from src import digestors
 
-    BATCH_SIZE = 2
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    data = random.sample(load_json(os.path.join(test_dir, "texts-for-nlp.json")), 10)
-    digestor = digestors.NamedEntityExtractor(
+    BATCH_SIZE = 5
+    data_batches = list(batched(load_json(os.path.join(test_dir, "texts-for-nlp.json"))[:60], BATCH_SIZE))
+
+    with digestors.NamedEntityExtractor(
         "knowledgator/modern-gliner-bi-base-v1.0",
         context_len=4096,
-        confidence=0.4
-    )
-    with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
-        for i in range(0, len(data), BATCH_SIZE):
-            items = [d['content'] for d in data[i:i+BATCH_SIZE]]
-            [ic(r) for r in digestor.run_batch(items)]
-            pbar.update(len(items))
+        threshold=0.4
+    ) as extractor:
+        for chunk in tqdm(data_batches, total=len(data_batches), desc="Progress: ", unit="bean chunk"):
+            [ic(digestors._safe_model_dump(r)) for r in extractor.run_batch([d['content'] for d in chunk])]
 
 def test_digest_parser():
     from nlp.src.models_old import Digest
@@ -355,10 +351,10 @@ def test_local_image_generator():
 if __name__ == "__main__":
     # test_article_parser()
     # test_embedder()
-    test_digestor()
+    # test_digestor()
     # test_digestor_perf()
     # test_digest_parser()
     # test_image_generator()
     # test_local_image_generator()
-    # test_extractor()
+    test_extractor()
    

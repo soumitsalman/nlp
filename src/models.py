@@ -15,11 +15,12 @@ class Digest(BaseModel):
     tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords. ex: agentic_ai,sovereign_compute,defense_tech etc.")
     
     # intelligence
-    primer: Optional[str] = Field(default=None, description="Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
-    key_points: List[str] = Field(
+    primer: Optional[str] = Field(default=None, description="Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT];Full sentence.")
+    key_events: List[str] = Field(
+        default_factory=list,
         description=(
-            "List of event-sequences,facts,datapoints."
-            "Format=[TIME]→[ACTOR]→[ACTION]→[OBJECT]→[CONTEXT/HOW]→[IMMEDIATE RESULT]→[FOLLOW-ON EFFECT]→[IMPACT]."
+            "Sequences of events,facts,datapoints."
+            "Format=[TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT];Full sentences. "
             "ex: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
         )
     )        
@@ -60,7 +61,7 @@ class Digest(BaseModel):
     cross_domain_impacts: List[str] = Field(
         default_factory=list,
         description=(
-            "List of secondary domains and associated impacts. Format=[domain]:[1-sentence impact]. "
+            "List of secondary domains and associated impacts. Format=[domain]:[impact;full sentence]. "
             "Examples:\n"
             "- cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
             "- aviation: Flight delays and cancellations due to air traffic control issues\n"
