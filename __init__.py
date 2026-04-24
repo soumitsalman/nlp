@@ -2,7 +2,7 @@ from .src import *
 from .src.embedders import *
 from .src.agents import *
 from .src.digestors import *
-from .src.models import *
+from .src.models_old import *
 from .src.prompts import *
 from .src.utils import run_batch, truncate_batch
 

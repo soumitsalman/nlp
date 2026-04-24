@@ -1,10 +1,13 @@
 from datetime import datetime
+import logging
 import os, sys
 import json, re, random
 from dotenv import load_dotenv
 from icecream import ic
 from tqdm import tqdm
 from itertools import batched
+
+from nlp.src import models, models_old
 
 EMBEDDER_CONTEXT_LEN=512
 DIGESTOR_CONTEXT_LEN=4096
@@ -73,24 +76,25 @@ def test_embedder():
 # @log_runtime(logger=logger)
 def test_digestor():
     from tqdm import tqdm
-    from src import digestors_v2, models_v2, utils
+    from src import digestors_v2, utils
 
-    BATCH_SIZE = 64
-    
-    data = load_json(os.path.join(test_dir, "texts-for-nlp.json"))
+    logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    BATCH_SIZE = 16
+    data_batches = list(batched(load_json(os.path.join(test_dir, "texts-for-nlp.json")), BATCH_SIZE))
     result = []
     with digestors_v2.DigestorStructuredOutput(
         model_name="LiquidAI/LFM2.5-1.2B-Instruct",
-        output_model=models_v2.Digest,
+        output_model=models.Digest,
         context_len=32768,
     ) as digestor:
-        for chunk in tqdm(batched(data, BATCH_SIZE)):
+        for chunk in tqdm(data_batches, desc="Progress: ", unit="bean chunk", total=len(data_batches)):
             result.extend(digestor.run_batch([d['content'] for d in chunk]))
-    save_json("digestor-structured-output-results", [r.model_dump(mode="json", exclude_unset=True, exclude_none=True, exclude_default=True) for r in result])
+    save_json("digestor-structured-output-results", [r.model_dump(mode="json", exclude_unset=True, exclude_none=True) for r in result if r])
 
 def test_extractor():
     from tqdm import tqdm
-    from src import digestors, models
+    from src import digestors
 
     BATCH_SIZE = 2
     test_dir = os.path.dirname(os.path.abspath(__file__))
@@ -107,7 +111,7 @@ def test_extractor():
             pbar.update(len(items))
 
 def test_digest_parser():
-    from src.models import Digest
+    from nlp.src.models_old import Digest
     responses = [
         "P:AI model training acceleration|Data compression advancements|AIOps framework rollout|Channel sales leadership change|Real-time AI data store|Storage system upgrade|Log data infrastructure replacement|CMO appointment|Sales leadership expansion|File collaboration VP appointment|CRO appointment|RAID integration for AI;E:Alluxio introduces Cache Only Write Mode|Atombeam raises $20M in A+ funding|CloudFabrix rebrands to Fabrix.ai|DDN appoints Wendy Stusrud|GridGain launches GridGain for AI|Hitachi Vantara wins pharmaceutical customer|Hydrolix ships Spark connector for Databricks|MinIO appoints Erik Frieberg|Quobyte expands to New York|Resilio appoints Eric Soffin|Scality appoints Emilio Roman|Xinnor wins customer with BeeGFS integration;D:Atombeam funding: $35M total|$84 patents issued to Atombeam|115 patents pending for Atombeam|HP overlap: Riahi & Ignomirello - 4 years|Read speeds: 29.2 GBps|Write speeds: 25.8 GBps;R:Financial sector (Quobyte expansion);N:Alluxio|Atombeam|CloudFabrix/Fabrix.ai|DDN|GridGain|Hitachi Vantara|Hydrolix|MinIO|Quobyte|Resilio|Scality|Xinnor|Asghar Riahi|Brian Ignomirello|Wendy Stusrud|Erik Frieberg|Emilio Roman|Peter Brennan;C:AI|Storage|Data Management|Cloud Computing|AIOps;S:neutral",
 
@@ -187,7 +191,7 @@ def test_deterministic_reject():
 
 
 def test_article_parser():
-    from src.models import Metadata
+    from nlp.src.models_old import Metadata
     inputs = load_json(os.path.join(os.path.dirname(__file__), "text-for-generator.json"))
     articles = [Metadata.parse_markdown(inp["content"]) for inp in inputs]
     for a in articles:
@@ -195,7 +199,7 @@ def test_article_parser():
 
 def test_digestor_perf():
     from tqdm import tqdm
-    from src import prompts, agents, models, utils
+    from src import prompts, agents, utils
 
     BATCH_SIZE = 2
     data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
@@ -217,7 +221,7 @@ def test_digestor_perf():
             model_path=path,
             max_input_tokens=4096,
             max_output_tokens=400,
-            output_parser=models.Digest.parse_compressed
+            output_parser=models_old.Digest.parse_compressed
         )
         print("=========", path, "===========")
         with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
