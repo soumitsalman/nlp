@@ -11,29 +11,34 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 _MAX_CHUNKS = 16
-_OVERFLOW = 160
+_SPECIAL_TOKEN_MARGIN = 8  # BOS/EOS/CLS/SEP overhead; chunk_size = context_len - this
+_OVERLAP_MARGIN = 16  # to ensure that we don't lose important context when merging chunk embeddings
 VECTOR = list[float]
+
+_too_short = lambda chunk: len(chunk) < (_OVERLAP_MARGIN<<2)
 
 class EmbedderBase(ABC):
     splitter = None
     context_len: int = None
+    tokenizer_fn = None
 
-    def __init__(self, context_len: int):
-        self.context_len = context_len        
+    def __init__(self, context_len: int, tokenizer_fn=None):
+        self.context_len = context_len
+        self.tokenizer_fn = tokenizer_fn
 
     def _split(self, text: str):
         # NOTE: moving the import inside the function so that there is no need to install llama-index if the embedder is used only for small texts
-        from llama_index.core.text_splitter import SentenceSplitter
-        if not self.splitter: 
-            self.splitter = SentenceSplitter.from_defaults(
-            chunk_size=self.context_len-_OVERFLOW, # NOTE: this is a hack to accommodate for different tokenizer used by the splitter vs the model 
-            chunk_overlap=0, 
-            paragraph_separator="\n", 
-            include_metadata=False, 
-            include_prev_next_rel=False
-        )
+        from llama_index.core.text_splitter import TokenTextSplitter
+        if not self.splitter:
+            self.splitter = TokenTextSplitter(
+                chunk_size=self.context_len - _SPECIAL_TOKEN_MARGIN,
+                chunk_overlap=_OVERLAP_MARGIN,
+                tokenizer=self.tokenizer_fn,
+                include_metadata=False,
+                include_prev_next_rel=False,
+            )
         chunks = self.splitter.split_text(text)[:_MAX_CHUNKS]
-        if len(chunks) > 1 and len(chunks[-1]) < _OVERFLOW: chunks = chunks[:-1]
+        if len(chunks) > 1 and _too_short(chunks[-1]): chunks = chunks[:-1]
         return chunks
 
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
@@ -139,8 +144,9 @@ class TransformerEmbeddings(EmbedderBase):
 
     def __init__(self, model_path: str, context_len: int):
         import torch
+        from transformers import AutoTokenizer
 
-        super().__init__(context_len)
+        super().__init__(context_len, tokenizer_fn=AutoTokenizer.from_pretrained(model_path, max_length=context_len, use_fast=True).encode)
         self.model_path = model_path
         self.tokenizer_kwargs = {
             "truncation": True,
@@ -175,7 +181,10 @@ class OVEmbeddings(EmbedderBase):
     context_len = None
 
     def __init__(self, model_path: str, context_len: int):
-        super().__init__(context_len)
+        from transformers import AutoTokenizer
+
+        _tokenizer = AutoTokenizer.from_pretrained(model_path, max_length=context_len, use_fast=True)
+        super().__init__(context_len, tokenizer_fn=_tokenizer.encode)
         self.model_path = model_path
         self.context_len = context_len
 
@@ -204,7 +213,10 @@ class ORTEmbeddings(EmbedderBase):
     context_len = None
 
     def __init__(self, model_path: str, context_len: int):
-        super().__init__(context_len)
+        from transformers import AutoTokenizer
+
+        _tokenizer = AutoTokenizer.from_pretrained(model_path, max_length=context_len, use_fast=True)
+        super().__init__(context_len, tokenizer_fn=_tokenizer.encode)
         self.model_path = model_path
         self.context_len = context_len
         self.tokenizer_kwargs = {
@@ -233,9 +245,12 @@ class ORTEmbeddings(EmbedderBase):
         return False
 
 class VLLMEmbedder(EmbedderBase):
-    def __init__(self, model_name: str, context_len: int):
-        super().__init__(context_len)
-        self.model_name = model_name
+    def __init__(self, model_path: str, context_len: int):
+        from transformers import AutoTokenizer
+
+        _tokenizer = AutoTokenizer.from_pretrained(model_path, max_length=context_len, use_fast=True)
+        super().__init__(context_len, tokenizer_fn=_tokenizer.encode)
+        self.model_path = model_path
         self._llm = None
 
     def _embed(self, texts: str|list[str]):
@@ -245,7 +260,7 @@ class VLLMEmbedder(EmbedderBase):
     def __enter__(self):
         if not self._llm:
             from vllm import LLM
-            self._llm = LLM(model=self.model_name)
+            self._llm = LLM(model=self.model_path)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
