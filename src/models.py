@@ -1,335 +1,664 @@
-import json
-from itertools import chain
-from typing import Optional
-
+from datetime import date
+from typing import Any, Dict, List, Literal, Optional, Union, get_args, get_origin
+import types
+import re
+import textcase
 from pydantic import BaseModel, Field
 
-from .utils import *
-
-M_GIST = "# GIST"
-M_CATEGORIES = "# DOMAINS"
-M_ENTITIES = "# ENTITIES"
-M_TOPIC = "# TOPIC"
-M_REGIONS = "# REGIONS"
-M_SUMMARY = "# SUMMARY"
-M_KEYPOINTS = "# KEY POINTS"
-M_KEYEVENTS = "# KEY EVENTS"
-M_DATAPOINTS = "# KEY POINTS"
-M_INSIGHT = "# ACTIONABLE INSIGHT"
-M_FIELDS = [
-    M_GIST,
-    M_CATEGORIES,
-    M_ENTITIES,
-    M_TOPIC,
-    M_REGIONS,
-    M_SUMMARY,
-    M_KEYPOINTS,
-    M_KEYEVENTS,
-    M_DATAPOINTS,
-    M_INSIGHT,
-]
-M_START = "```markdown"
-M_END = "```"
-MARKDOWN_HEADERS = ["# ", "## ", "### ", "#### ", "**"]
-
-C_KEYPOINTS = "P:"
-C_KEYEVENTS = "E:"
-C_DATAPOINTS = "D:"
-C_REGIONS = "R:"
-C_ENTITIES = "N:"
-C_CATEGORIES = "C:"
-C_SENTIMENTS = "S:"
-COMPRESSED_FIELDS = [
-    C_KEYPOINTS,
-    C_KEYEVENTS,
-    C_DATAPOINTS,
-    C_REGIONS,
-    C_ENTITIES,
-    C_CATEGORIES,
-    C_SENTIMENTS,
-]
-UNDETERMINED = ["n/a", "none", "undetermined", "not specified", "not mentioned"]
-
-_MAX_NAME_LEN = 40
-_MAX_STOCK_TICKER_LEN = 5
-strip_nonalphanum = lambda text: re.sub(r"^[\W_]+|[\W_]+$", "", text)
-
-def valid_unique(items: list[str], additional_filter=lambda x: True):
-    if not items:
-        return items
-    return list({item.lower(): item for item in map(strip_nonalphanum, items) if item and additional_filter(item)}.values())
-
-def valid_names(items: list[str]):
-    return valid_unique(items, additional_filter=lambda x: len(x) <= _MAX_NAME_LEN)
-
-def valid_stock_tickers(items: list[str]):
-    return valid_unique(items, additional_filter=lambda x: len(x) <= _MAX_STOCK_TICKER_LEN)
-
-def valid_regions(items: list[str]):
-    return list(map(lambda x: x.replace(".", ""), valid_names(items)))
-
-_VALIDATE_FUNC = {
-    "keypoints": valid_unique,
-    "keyevents": valid_unique,
-    "datapoints": valid_unique,
-    "entities": valid_names,
-    "people": valid_names,
-    "regions": valid_regions,
-    "products": valid_unique,
-    "organizations": valid_names,
-    "stock_tickers": valid_stock_tickers,    
-}
-
 class Digest(BaseModel):
-    raw: str
-    keypoints: Optional[list[str]] = Field(default=None)
-    keyevents: Optional[list[str]] = Field(default=None)
-    datapoints: Optional[list[str]] = Field(default=None)
-    categories: Optional[list[str]] = Field(default=None)
-    sentiments: Optional[list[str]] = Field(default=None)
-
-    entities: Optional[list[str]] = Field(default=None)
-    people: Optional[list[str]] = Field(default=None)
-    regions: Optional[list[str]] = Field(default=None)
-    products: Optional[list[str]] = Field(default=None)
-    organizations: Optional[list[str]] = Field(default=None)
-    stock_tickers: Optional[list[str]] = Field(default=None)
+    # keywords
+    regions: List[str] = Field(default_factory=list, description="List of specified geographic regions/locations. ex: USA,EU,China etc. Exclude=grouped/aggregated qualifications - 30 countries.")
+    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. Exclude=generic,grouped/aggregated qualifications - 14 leaders.")
+    products: List[str] = Field(default_factory=list, description="List of specified products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. Exclude=generic,grouped/aggregated qualifications - 3 new products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. Exclude=generic,grouped/aggregated qualifications - 5 companies.")
+    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock tickers. ex: TSLA, GLD, NVDA etc.")    
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords. ex: agentic_ai,sovereign_compute,defense_tech etc.")
+    
+    # intelligence
+    headline: Optional[str] = Field(default=None, description="1 sentence, Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
+    key_events: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Sequences of events,facts,datapoints. "
+            "Complete sentences, Format=[TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT]. "
+            "ex: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
+        )
+    )        
+    macro_context: Optional[str] = Field(
+        None,
+        description=(
+            "Primary geopolitical, trade, economic or technological context driving the key points. Length<=5words. "
+            "ex: us_iran_conflict, red_sea_disruption, tariff_volatility, rare_earth_controls, arctic_shipping_rivalry, africa_mineral_conflict, cyber_arms_race_escalation etc."
+        ),
+    )
+    # "model_release, agent_launch, enterprise_adoption_case, safety_regulation_update, multimodal_breakthrough\n"
+    # "ransomware_attack, zero_day_disclosure, supply_chain_breach, ai_enhanced_exploit, state_sponsored_campaign\n"
+    # "chip_launch, platform_announcement, chip_shortage, foundry_partnership\n"
+    # "humanoid_demo, warehouse_deployment, drone_swarm_test, regulation_change\n"
+    # "series_a, acquisition_announced, merger_completed, strategic_partnership, ipo_filing\n"
+    # "earnings_beat, stock_reaction, analyst_upgrade, sector_rotation, sec_filing_update\n"
+    # "route_disruption, freight_rate_spike, aircraft_order, supply_chain_bottleneck, cyber_incident_on_cargo\n"
+    # "oil_price_shock, gdp_forecast_revision, inflation_spike, rate_cut_signal, commodity_demand_shift\n"
+    event_type: Optional[str] = Field(
+        None,
+        description=(
+            "Primary aggregated event_type/resultant. "
+            "Examples: "
+            "model_release, agent_launch, regulation_update, multimodal_breakthrough, "
+            "ransomware_attack, zero_day_disclosure, supply_chain_breach, "
+            "chip_launch, platform_announcement, "
+            "humanoid_demo, warehouse_deployment, "
+            "series_a, acquisition_announced, ipo_filing, "
+            "route_disruption, freight_rate_spike, supply_chain_bottleneck, "
+            "oil_price_shock, gdp_forecast_revision, rate_cut_signal etc."
+        ),
+    )
+    impact_level: Optional[str] = Field(
+        None,
+        description="Specified impact of the events on primary domain/context. "
+        "ALLOWED: null, low, medium, high, critical, transformative",
+    )
+    cross_domain_impacts: List[str] = Field(
+        default_factory=list,
+        description=(
+            "List of secondary domains and associated impacts. Format=[domain]:[impact;1 sentence]. "
+            "Examples:\n"
+            "- cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
+            "- aviation: Flight delays and cancellations due to air traffic control issues\n"
+            "- hardware: Supply chain disruptions affecting chip production\n"
+            "- startups: Emerging companies facing funding challenges\n"
+        ),
+    )    
+    future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory.")
+    
 
     def model_post_init(self, __context):
-        for field, validate_func in _VALIDATE_FUNC.items():
-            if getattr(self, field):
-                setattr(self, field, validate_func(getattr(self, field)))
+        cleanup_digest_fields(self, __context)
 
     @classmethod
-    def parse_json(cls, response: str):
-        try:
-            kvpair = json.loads(response[response.find("{") : response.rfind("}") + 1])
-            return Digest(**kvpair, raw=response)
-        except json.JSONDecodeError:
-            return
+    def model_text_schema(cls):
+        return text_schema(cls)
 
-    @classmethod
-    def parse_markdown(cls, response: str):
-        digest = Digest(raw=response)
-        response = response.strip().removeprefix(M_START).removesuffix(M_END).strip()
-        last = None
-        for line in response.splitlines():
-            line = line.strip()
-            if not line or line == UNDETERMINED:
-                continue
+    def __str__(self):
+        return text_value(self, field_delim="\n")
 
-            if any(field in line for field in M_FIELDS):
-                last = line
-            elif M_GIST in last:
-                digest.gist = line
-            elif M_CATEGORIES in last:
-                digest.categories = split_parts(line)
-            elif C_ENTITIES in last:
-                digest.entities = split_parts(line)
-            elif M_TOPIC in last:
-                digest.topic = line
-            elif C_REGIONS in last:
-                digest.regions = split_parts(line)
-            elif M_SUMMARY in last:
-                digest.summary = (
-                    (digest.summary + "\n" + line) if digest.summary else line
-                )
-            elif C_KEYPOINTS in last:
-                if not digest.keypoints:
-                    digest.keypoints = []
-                digest.keypoints.append(line.removeprefix("- ").removeprefix("* "))
-            elif M_INSIGHT in last:
-                digest.insight = line
+    @property
+    def gist(self):
+        return text_value(self, item_delim="|", field_delim=";")
 
-        return digest
+# ────────────────────────────────────────────────
+# Domain-specific models (inherit from base)
+# ────────────────────────────────────────────────
 
-    @classmethod
-    def parse_compressed(cls, response: str):
-        if not response:
-            return response
-
-        results = {"P:": [], "E:": [], "D:": [], "N:": [], "R:": []}
-        current_pos = 0
-        while current_pos < len(response):
-            key = response[current_pos : current_pos + 2]
-            if key in results:
-                next_key_pos = [
-                    response.find(";" + next_key, current_pos + 2)
-                    for next_key in results.keys()
-                ]
-                end = min(
-                    [pos for pos in next_key_pos if pos > -1], default=len(response)
-                )
-                if response[end - 1] == ";":
-                    ext = response[current_pos + 2 : end - 1]
-                else:
-                    ext = response[current_pos + 2 : end]
-
-                results[key].extend(
-                    chain(*(item.strip().split(";") for item in ext.strip().split("|")))
-                )
-                current_pos = end
-
-            current_pos += 1
-
-        response = ""
-        for key, value in results.items():
-            if not value:
-                continue
-            response += key + "|".join(v.strip() for v in value) + ";"
-
-        return Digest(
-            raw=response,
-            keypoints=results.get("P:") or None,
-            keyevents=results.get("E:") or None,
-            datapoints=results.get("D:") or None,
-            entities=results.get("N:") or None,
-            regions=results.get("R:") or None,
-        )
+class AINewsDigest(Digest):
+    people: List[str] = Field(default_factory=list, description="List of names of key researchers, authors or quoted experts")
+    products: List[str] = Field(default_factory=list, description="List of specified products/models/technologies/agents/frameworks. ex: Grok, ChatGPT, Claude Opus, Linux. Exclude=generic,grouped/aggregated qualifications - 3 new products.")    
+    benchmark_scores: List[str] = Field(default_factory=list, description="List of reported performance numbers on standard benchmarks (key: benchmark name, value: score)")
+    claimed_productivity_lift: Optional[str] = Field(None, description="Reported productivity/efficiency gain")
+    enterprise_adoption_rate: Optional[str] = Field(None, description="Reported adoption/usage rate")
+    price: Optional[str] = Field(None, description="Reported unit/subscription price")
+    valuation_or_market_size: Optional[str] = Field(None, description="Company valuation or projected market size")
 
 
-_THSTART = "<think>"
-_THEND = "</think>"
-M_TITLE_PREFIX = ["Topic:", "Topics:", "Intelligence Briefing:", "News Recap:"]
-M_TITLE = ["## Title"]
-M_INTRODUCTION = ["## Introduction"]
-M_ANALYSIS = ["## Analysis"]
-M_INSIGHTS = [
-    "## Key Datapoints",
-    "## Key Takeaways",
-    "## Key Trends & Insights",
-    "## Datapoints",
-    "## Takeaways",
-]
-M_VERDICT = ["## Verdict", "## Conclusion"]
-M_PREDICTION = ["## Prediction", "## Predictions"]
-M_KEYWORDS = ["## Keywords"]
-A_FIELDS = list(
-    chain(
-        *[
-            M_TITLE,
-            M_INTRODUCTION,
-            M_ANALYSIS,
-            M_INSIGHTS,
-            M_VERDICT,
-            M_PREDICTION,
-            M_KEYWORDS,
-        ]
+class CyberNewsDigest(Digest):
+    # malware information
+    threat_actors: List[str] = Field(default_factory=list, description="List of named or categorized attackers. Examples: LockBit, nation state, etc.",)
+    vulnerabilities: List[str] = Field(default_factory=list, description="List of CVE IDs, product names or zero-day descriptions mentioned")    
+    malware_family: Optional[str] = Field(None, description="Name of the malware family or ransomware strain if applicable")
+    attack_speed: Optional[str] = Field(None)
+    incident_type: Optional[str] = Field(None, description="Primary category of the cybersecurity event. Allowed: ransomware, supply_chain, zero_day, ai_enhanced, state_sponsored, shadow_ai, critical_infra etc.")
+    # impact information
+    products: List[str] = Field(default_factory=list, description="List of impacted/vulnerable products/services. Exclude=generic,grouped/aggregated qualifications - 3 new products.")
+    entities: List[str] = Field(default_factory=list, description="List of impacted/vulnerable organizations/sectors/users/scope. Exclude=generic,grouped/aggregated qualifications - 7 organizations.")
+    technical_impact: Optional[str] = Field(None, description="Specified quantitative technical consequences. Examples: 1000 records breach, 10h service outage etc.")
+    financial_impact: Optional[str] = Field(None, description="Specified financial damage or cost of recovery in USD.")    
+    business_impact: Optional[str] = Field(None, description="Specified operational, financial, reputational or regulatory consequences.")
+    compliance_impact: List[str] = Field(default_factory=list, description="List of specified policies,standards,laws,regulations as being triggered (SEC, CIRCIA, GDPR, etc.)")
+    # remediation
+    mitigations: List[str] = Field(default_factory=list, description="List of specified defensive/corrective/mitigation/recovery steps" )
+
+
+class HardwareNewsDigest(Digest):
+    """Summary focused on chips, accelerators, compute infrastructure"""
+
+    products: List[str] = Field(default_factory=list, description="List of specified products/chips (ex: NVIDIA H100, AMD MI300, AWS Trainium). Exclude=generic,grouped/aggregated qualifications - 3 new products.")
+    use_cases: List[str] = Field(default_factory=list, description="List of intended/demonstrated uses. Examples: AI training, inference, HPC, edge computing. Limit=5",)
+    performance_improvement: Optional[str] = Field(None, description="Speedup factor compared to previous generation. Include=value,unit,context (ex: 2.8x faster inference).")
+    power_efficiency: Optional[str] = Field(None, description="Power/energy usage gain/reduction. Include=unit,value (ex: 15% reduction).")
+    capex_investment: Optional[str] = Field(None,description="CapEx for data centers/fabs. Include=unit,value (ex: $2.5 billion)")
+    price: Optional[str] = Field(None, description="Reported unit/subscription price.")
+
+class RoboticsAVDronesNewsSummary(Digest):
+    """Summary focused on robotics systems, autonomous vehicles, drones"""
+
+    product_system: str = Field(
+        ..., description="Name/model of robot/AV/drone (e.g. 'Tesla Cybercab', 'Boston Dynamics Stretch')"
     )
-)
-
-
-class Metadata(BaseModel):
-    headline: str = Field(description="Headline for the article. Length <= 20 Words")
-    question: Optional[str] = Field(
-        default=None,
-        description="Specific question that the article addresses. Length <= 20 Words",
+    manufacturer: str = Field(
+        ..., description="Company. Format: official name. If startup: include founding year."
     )
-    highlights: list[str] = Field(
-        description="List of highlights and data points. each highlight length <= 20 Words"
+    category: Optional[str] = Field(
+        None,
+        description="Broad category of the embodied system. Allowed: industrial_cobot, humanoid, autonomous_vehicle, drone_swarm, warehouse_agv.",
     )
-    keywords: list[str] = Field(
-        description="List of keywords and names. each keyword length <= 3 Words"
+    speed_or_payload_improvement: Optional[str] = Field(
+        None,
+        description="Key upgrade vs prior gen. Include unit in value. Examples: '2.5 m/s', '50% faster'.",
     )
-    banner_prompt: Optional[str] = Field(
-        default=None,
-        description="text-to-image LLM Prompt for generating article banner",
+    deployment_sites_count: Optional[str] = Field(
+        None,
+        description="Real-world deployments/customers mentioned. Include count in value (e.g. '12 sites').",
+    )
+    funding_raised_usd_millions: Optional[str] = Field(
+        None,
+        description="Funding amount raised. Include currency and magnitude in value (e.g. '$50 million').",
+    )
+    cost_per_unit_usd: Optional[str] = Field(
+        None, description="Estimated cost per robot / vehicle. Include currency in value (e.g. '$250,000')."
+    )
+    real_world_limitation_noted: List[str] = Field(
+        default_factory=list,
+        description="Practical limitations noted. Examples: weather sensitivity, edge cases, cost barriers. Exclude speculation. Limit: 5.",
     )
 
-    # deprecated fields
-    raw: Optional[str] = Field(default=None)
-    intro: Optional[str] = Field(default=None)
-    insights: Optional[list[str]] = Field(default=[])
-    summary: Optional[str] = Field(default=None)
-    predictions: Optional[list[str]] = Field(default=[])
 
-    def parse_json(text: str):
-        text = text.strip()
-        # text = remove_before(text, _THEND).strip()
-        text = text.removeprefix("```json").removesuffix("```").strip()
+class StartupCorpNewsSummary(Digest):
+    """Summary focused on startups, corporate moves, funding, M&A"""
 
-        data = json.loads(text)
-        return Metadata(
-            raw=text,
-            headline=data.get("headline"),
-            intro=data.get("introduction"),
-            highlights=data.get("analysis") or data.get("highlights"),
-            insights=data.get("datapoints") or data.get("takeaways"),
-            summary=data.get("summary"),
-            predictions=data.get("predictions"),
-            keywords=data.get("keywords"),
-        )
-
-    def parse_markdown(text: str):
-        text = text.strip()
-        # text = remove_before(text, _THEND).strip()
-        text = text.removeprefix("```markdown").removesuffix("```").strip()
-        if not text:
-            return
-
-        fields = {k: [] for k in A_FIELDS}
-        add_to = None
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            if line in A_FIELDS:
-                add_to = line
-            elif add_to:
-                fields[add_to].append(line)
-
-        split_keywords = lambda line: [
-            kw.strip().removesuffix(".") for kw in line.split(",") if len(kw) <= 30
-        ]
-        chain_lines = lambda fnames: filter(
-            lambda line: bool(line), chain(*(fields.get(fname) for fname in fnames))
-        )
-        try:
-            return Metadata(
-                raw=text,
-                headline=next(chain_lines(M_TITLE), ""),
-                intro="\n".join(chain_lines(M_INTRODUCTION)),
-                highlights=chain_lines(M_ANALYSIS),
-                insights=chain_lines(M_INSIGHTS),
-                summary="\n".join(chain_lines(M_VERDICT)),
-                predictions=chain_lines(M_PREDICTION),
-                keywords=split_keywords(next(chain_lines(M_KEYWORDS), "")),
-            )
-        except:
-            print(text)
+    main_company: str = Field(..., description="Primary company (official name). No qualifiers.")
+    other_companies: List[str] = Field(
+        default_factory=list,
+        description="Co-parties: acquirers, investors, partners. Exclude=unrelated mentions. Limit: 5.",
+    )
+    lead_investors: List[str] = Field(
+        default_factory=list, description="Lead/prominent investors (official names/fund names). Exclude=passive stakeholders. Limit: 5."
+    )
+    acquirer: Optional[str] = Field(
+        None, description="Name of the acquiring company in M&A deals"
+    )
+    funding_amount_usd_millions: Optional[str] = Field(
+        None, description="Amount raised in the funding round. Include currency in value (e.g. '$25 million')."
+    )
+    round_type: Optional[str] = Field(
+        None, description="Stage of funding (Seed, Series A, Late, Debt, etc.)"
+    )
+    pre_post_valuation_usd_billions: Optional[str] = Field(
+        None, description="Pre-money and/or post-money valuation. Include currency in value (e.g. 'pre: $500M, post: $1B')."
+    )
+    deal_value_usd_millions: Optional[str] = Field(
+        None, description="Transaction value in M&A deals. Include currency in value (e.g. '$500 million')."
+    )
+    yoy_funding_growth_pct: Optional[str] = Field(
+        None,
+        description="Year-over-year change in funding volume. Include unit in value (e.g. '+15%').",
+    )
+    strategic_rationale: str = Field(
+        ...,
+        description="1-sentence rationale. Format: [Actor] seeks [capability/market] via [deal type].",
+    )
+    use_of_funds: Optional[str] = Field(
+        None, description="Stated use of capital. Categories: R&D, expansion, acquisition, operations, debt repayment. Be explicit."
+    )
 
 
-def cleanup_markdown(text: str) -> str:
-    text = remove_before(text, M_START)
-    text = remove_after(text, M_END)
-    # remove all \t with
-    text = text.replace("\t", "")
-    # Replace "\n(any number of spaces)\n" with "\n\n"
-    text = re.sub(r"\n\s*\n", "\n\n", text)
+class FinancialMarketsNewsSummary(Digest):
+    """Summary focused on stocks, earnings, filings, market movements"""
 
-    # removing the first line if it looks like a header
-    text = text.strip()
-    if any(text.startswith(tag) for tag in MARKDOWN_HEADERS):
-        text = remove_before(text, "\n")
+    ticker_or_index: str = Field(
+        ..., description="Primary ticker(s) or index (format: 'AAPL' or 'S&P500'). Limit: 3 tickers max."
+    )
+    companies_mentioned: List[str] = Field(
+        default_factory=list,
+        description="Companies discussed. Format: official ticker+name. Exclude=tangential mentions. Limit: 5.",
+    )
+    stock_reaction_pct: Optional[str] = Field(
+        None,
+        description="Stock price change after news. Include unit in value (e.g. '+2.5%' or '-1.3%').",
+    )
+    earnings_beat_miss_pct: Optional[str] = Field(
+        None, description="EPS/revenue beat or miss vs consensus. Include unit and direction in value (e.g. '+3% beat' or '-2% miss')."
+    )
+    revenue_or_ebitda_usd_millions: Optional[str] = Field(
+        None,
+        description="Reported or forecasted revenue / EBITDA. Include currency and magnitude in value (e.g. '$1,200 million' or '$1.2B').",
+    )
+    forward_guidance_change_pct: Optional[str] = Field(
+        None, description="FY guidance change vs prior. Include unit in value (e.g. '+5%' if raised, '-10%' if lowered, or 'reaffirmed')."
+    )
+    valuation_multiple: Optional[str] = Field(
+        None,
+        description="Forward-looking valuation metric (e.g. '32x revenue', '18x EBITDA')",
+    )
+    financial_analysis_summary: str = Field(
+        ...,
+        description="1-sentence summary. Format: [Company] [beat/miss] due to [reason], implying [outlook].",
+    )
+    sector_rotation_signal: str = Field(
+        default="",
+        description="Money flow signal. Format: 'from [sector] to [sector]' (e.g. 'from Mag7 to cyclicals').",
+    )
 
-    # replace remaining headers with "**"
-    text = re.sub(r"(#+ )(.*?)(\n|$)", _replace_header_tag, text)
 
-    # # Remove any space after "\n"
-    # text = re.sub(r"\n\s+", "\n", text)
-    # Replace "\n\n\n" with "\n\n"
-    # text = re.sub(r"\n\n\n", "\n\n", text)
-    # # remove > right after \n
-    # text = re.sub(r"\n>", "\n", text)
-    # # replace every single \n with \n\n
-    # text = re.sub(r'(?<!\n)\n(?!\n)', '\n\n', text)
-    # # Add a space after every "+" if there is no space
-    # text = re.sub(r'\+(?!\s)', '+ ', text)
-
-    return text.strip()
+class LogisticsDigest(Digest):
+    transportation_mode: str = Field(description="Allowed: N/A, air, ocean, truck, multimodal")
+    affected_routes: List[str] = Field(default_factory=list, description="Examples: Red Sea, Suez, Transpacific. Limit=5")
+    freight_rate_change: Optional[str] = Field(None, description="Include=value,unit,context. Example: +8% in 2 years")
+    order_quantity: Optional[str] = Field(None, description="Include=value,unit. Example: 30 tons")
+    shipping_delay: Optional[str] = Field(None, description="Include=value,unit,context. Example: 5 days for Transpacific route.")
+    financial_impact: Optional[str] = Field(None, description="Specified financial damage or cost of recovery in USD.")    
+    business_impact: Optional[str] = Field(None, description="Specified operational, reputational or regulatory consequences")
+    mitigations: List[str] = Field(
+        default_factory=list,
+        description="List of specified mitigations. Examples: rerouting, inventory buildup, alternative suppliers. Limit=5.",
+    )
 
 
-def _replace_header_tag(match):
-    header_content = match.group(2).strip()  # The content after "# " or "## "
-    newline = match.group(3)  # Preserve the newline or end of string
-    return f"\n**{header_content}**{newline}"
+class MacroEconomyDigest(Digest):
+    """Summary focused on global economy, macro indicators, forecasts"""
+
+    gdp_growth_forecast: Optional[str] = Field(None, description="GDP growth forecast. Include=value,unit,timeframe.")
+    inflation_impact: Optional[str] = Field(None, description="Inflation impact. Include=value,unit,timeframe.")
+    oil_price: Optional[str] = Field(None, description="Oil price scenario. Include=value,unit,timeframe.")
+    gold_demand: Optional[str] = Field(None, description="Gold demand. Include=value,unit,timeframe.")
+    macro_signal: str = Field(...,description="Format: [Event] signals [risk/opportunity] for [sector/macro].",)
+    market_significance: str = Field(description="Format: affects [equities/credit/funding] via [mechanism].",)
+
+
+# ────────────────────────────────────────────────
+# New shared financial core – extracted from overlapping fields
+# ────────────────────────────────────────────────
+class FinancialCoreMetrics(BaseModel):
+    """Reusable core quantitative financial metrics common to earnings releases and SEC filings"""
+
+    revenue_usd_millions: Optional[float] = Field(
+        None, description="Total revenue reported (millions USD)"
+    )
+    revenue_growth_yoy_pct: Optional[float] = Field(
+        None, description="Year-over-year revenue growth percentage"
+    )
+    net_income_usd_millions: Optional[float] = Field(
+        None,
+        description="Net income attributable to common shareholders (millions USD)",
+    )
+    eps_basic: Optional[float] = Field(
+        None, description="Basic earnings per share (GAAP)"
+    )
+    eps_diluted: Optional[float] = Field(None, description="Diluted EPS (GAAP)")
+    operating_cash_flow_usd_millions: Optional[float] = Field(
+        None, description="Net cash provided by operating activities (millions USD)"
+    )
+    capex_usd_millions: Optional[float] = Field(
+        None, description="Capital expenditures (millions USD)"
+    )
+    cash_equivalents_usd_millions: Optional[float] = Field(
+        None,
+        description="Cash, cash equivalents & short-term investments at period end",
+    )
+    total_debt_usd_millions: Optional[float] = Field(
+        None, description="Total short + long-term debt"
+    )
+    key_financial_ratios: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Important ratios (e.g. {'gross_margin_pct': '42.1', 'operating_margin_pct': '18.7', 'net_debt_to_ebitda': '1.8x'})",
+    )
+
+
+# ────────────────────────────────────────────────
+# Derived: Earnings Report Summary
+# ────────────────────────────────────────────────
+class EarningsReportSummary(Digest):
+    """Summary for earnings press releases, call transcripts, and related materials"""
+
+    fiscal_period: str = Field(
+        ..., description="Reporting period (e.g. 'Q4 2025', 'FY 2025')"
+    )
+    ticker: str = Field(..., description="Stock ticker symbol")
+    company_name: str = Field(..., description="Full company name")
+
+    # Compose shared financial block
+    financials: FinancialCoreMetrics = Field(
+        ..., description="Core quantitative financial results"
+    )
+
+    # Earnings-specific extensions
+    revenue_beat_miss_pct: Optional[float] = Field(
+        None, description="Revenue beat/miss vs consensus (%)"
+    )
+    eps_beat_miss_pct: Optional[float] = Field(
+        None, description="EPS beat/miss vs consensus (%)"
+    )
+    eps_adjusted: Optional[float] = Field(None, description="Non-GAAP / adjusted EPS")
+    gross_margin_pct: Optional[float] = Field(
+        None, description="Gross margin percentage"
+    )
+    operating_margin_pct: Optional[float] = Field(
+        None, description="Operating margin percentage"
+    )
+    free_cash_flow_usd_millions: Optional[float] = Field(
+        None, description="Free cash flow (operating CF – capex)"
+    )
+
+    next_quarter_guidance: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Key next-quarter guidance ranges or narrative",
+    )
+    full_year_guidance_update: Optional[str] = Field(
+        None, description="Full-year outlook change (raised/lowered/reaffirmed)"
+    )
+    guidance_tone: Literal["bullish", "cautious", "neutral", "mixed"] = Field("neutral")
+
+    key_segments_performance: Dict[str, str] = Field(
+        default_factory=dict, description="Segment/product/region highlights"
+    )
+    main_drivers: List[str] = Field(
+        default_factory=list, description="Primary drivers of results"
+    )
+    mdna_key_takeaways: List[str] = Field(
+        default_factory=list, description="Key MD&A paraphrases"
+    )
+    strategic_priorities: List[str] = Field(
+        default_factory=list, description="Strategic / capital allocation themes"
+    )
+    risks_updated: List[str] = Field(
+        default_factory=list, description="Updated or emphasized risks"
+    )
+    one_time_items: List[str] = Field(
+        default_factory=list, description="Significant non-recurring items"
+    )
+
+    management_tone: Literal[
+        "confident", "cautious", "defensive", "optimistic", "mixed"
+    ] = Field("neutral")
+    qna_hot_topics: List[str] = Field(
+        default_factory=list, description="Most discussed Q&A themes"
+    )
+    call_sentiment_score: Optional[float] = Field(
+        None, description="Optional numeric sentiment (-1.0 to +1.0)"
+    )
+
+
+# ────────────────────────────────────────────────
+# Derived: SEC Filing Summary
+# ────────────────────────────────────────────────
+class SECFilingSummary(Digest):
+    """Summary for SEC filings (10-K, 10-Q, 8-K, etc.)"""
+
+    filing_type: Literal["10-K", "10-K/A", "10-Q", "10-Q/A", "8-K"] = Field(
+        ..., description="SEC form type"
+    )
+    accession_number: str = Field(..., description="EDGAR accession number")
+    filing_date: date = Field(..., description="Date filed with SEC")
+    period_end_date: date = Field(..., description="End of reporting period")
+    ticker: str = Field(..., description="Stock ticker symbol")
+    company_name: str = Field(..., description="Full company name as filer")
+
+    # Compose shared financial block
+    financials: FinancialCoreMetrics = Field(
+        ..., description="Core quantitative financial results from statements"
+    )
+
+    # SEC-specific extensions
+    mdna_key_takeaways: List[str] = Field(
+        default_factory=list, description="Most material MD&A points"
+    )
+    material_trends_uncertainties: List[str] = Field(
+        default_factory=list,
+        description="Trends/uncertainties likely to impact future results",
+    )
+    critical_accounting_estimates: List[str] = Field(
+        default_factory=list,
+        description="Significant accounting judgments/sensitivities",
+    )
+    top_risk_factors: List[str] = Field(
+        default_factory=list, description="Top / newly emphasized risk factors"
+    )
+    legal_proceedings_status: List[str] = Field(
+        default_factory=list, description="Material litigation / contingencies summary"
+    )
+    business_overview_highlights: List[str] = Field(
+        default_factory=list, description="Key Item 1 Business points"
+    )
+    strategic_initiatives: List[str] = Field(
+        default_factory=list, description="Major strategic priorities / shifts"
+    )
+    key_exhibits_filed: List[str] = Field(
+        default_factory=list,
+        description="Notable exhibits (e.g. insider policy, material contracts)",
+    )
+    material_events_8k: Optional[str] = Field(
+        None, description="For 8-K: description of triggering event"
+    )
+
+
+# ────────────────────────────────────────────────
+# Merged model: FinancialDocumentSummary
+# ────────────────────────────────────────────────
+class FinancialDocumentSummary(Digest):
+    """
+    Unified model covering earnings releases, call transcripts, 10-K, 10-Q, 8-K and combinations.
+    Use 'document_subtype' to distinguish primary focus.
+    """
+
+    document_subtype: Literal[
+        "earnings_release",  # Press release only
+        "earnings_call_transcript",  # Transcript / call summary
+        "earnings_package",  # Release + call + slides
+        "10-K",  # Annual report
+        "10-Q",  # Quarterly report
+        "8-K",  # Current report / material event
+        "hybrid_earnings_filing",  # e.g. 10-Q + earnings release on same day
+    ] = Field(..., description="Primary nature / most important part of the document")
+
+    fiscal_period: str = Field(
+        ..., description="Reporting period e.g. 'Q4 2025', 'FY 2025'"
+    )
+    ticker: str = Field(..., description="Stock ticker")
+    company_name: str = Field(..., description="Company name as reported")
+    period_end_date: date = Field(..., description="End date of the fiscal period")
+    filing_date: Optional[date] = Field(
+        None, description="SEC filing/submission date (if applicable)"
+    )
+
+    # Core financials (shared)
+    financials: FinancialCoreMetrics = Field(..., description="Quantitative backbone")
+
+    # Earnings-specific extensions (optional – often null for pure 10-K/8-K)
+    revenue_beat_miss_pct: Optional[float] = Field(
+        None, description="Revenue vs consensus (%)"
+    )
+    eps_beat_miss_pct: Optional[float] = Field(None, description="EPS vs consensus (%)")
+    eps_adjusted: Optional[float] = Field(None, description="Non-GAAP/adjusted EPS")
+    gross_margin_pct: Optional[float] = Field(None, description="Gross margin %")
+    operating_margin_pct: Optional[float] = Field(
+        None, description="Operating margin %"
+    )
+    free_cash_flow_usd_millions: Optional[float] = Field(
+        None, description="Free cash flow"
+    )
+
+    next_quarter_guidance: Dict[str, str] = Field(
+        default_factory=dict, description="Next-quarter ranges or narrative"
+    )
+    full_year_guidance_update: Optional[str] = Field(
+        None, description="Full-year outlook change"
+    )
+    guidance_tone: Optional[Literal["bullish", "cautious", "neutral", "mixed"]] = Field(
+        None
+    )
+
+    # Call-specific (optional – usually null for pure filings)
+    management_tone: Optional[
+        Literal["confident", "cautious", "defensive", "optimistic", "mixed"]
+    ] = Field(None)
+    qna_hot_topics: List[str] = Field(
+        default_factory=list, description="Recurring or heated Q&A themes"
+    )
+    call_sentiment_score: Optional[float] = Field(
+        None, description="Numeric sentiment if analyzed (-1.0 to +1.0)"
+    )
+
+    # MD&A / Narrative – shared but emphasized differently
+    mdna_key_takeaways: List[str] = Field(
+        default_factory=list, description="Most important MD&A points / explanations"
+    )
+    main_drivers: List[str] = Field(
+        default_factory=list,
+        description="Primary drivers of results (volume, price, costs, FX…)",
+    )
+
+    # Risk & Legal – more prominent in filings
+    top_risk_factors: List[str] = Field(
+        default_factory=list, description="Key / newly updated risks"
+    )
+    legal_proceedings_status: List[str] = Field(
+        default_factory=list, description="Material litigation or contingencies"
+    )
+
+    # Business / Strategy – stronger in 10-K
+    business_overview_highlights: List[str] = Field(
+        default_factory=list, description="Core business description points"
+    )
+    strategic_initiatives: List[str] = Field(
+        default_factory=list, description="Strategic priorities, investments, shifts"
+    )
+
+    # Other material items
+    one_time_items: List[str] = Field(
+        default_factory=list, description="Non-recurring charges/gains"
+    )
+    material_trends_uncertainties: List[str] = Field(
+        default_factory=list,
+        description="Trends likely to materially affect future results",
+    )
+    key_exhibits_filed: List[str] = Field(
+        default_factory=list, description="Notable exhibits (policies, contracts…)"
+    )
+
+    # 8-K specific
+    material_event_description: Optional[str] = Field(
+        None, description="For 8-K: what triggered the filing"
+    )
+
+
+
+# ────────────────────────────────────────────────
+# Post initialization cleanup
+# ────────────────────────────────────────────────
+
+_UNDETERMINED = {"n/a", "na", "none", "unmentioned", "not mentioned", "unspecified", "undetermined", "not specified", "not found"}
+_MAX_NAME_LEN = 40
+def cleanup_names(items: list[str]):
+    """Remove leading/trailing non-alphanumeric characters, filter out empty and undetermined values, and deduplicate while preserving original casing of first occurrence."""
+    if not items: return items
+
+    texts = map(lambda text: re.sub(r"^[\W_]+|[\W_]+$", "", text).strip(), items)
+    texts = filter(lambda tag: tag and len(tag) <= _MAX_NAME_LEN and tag.lower() not in _UNDETERMINED, texts)
+    return list({item.lower(): item for item in texts}.values())
+
+_MAX_TICKER_LEN = 5
+def valid_stock_tickers(items: list[str]):
+    return list(filter(lambda x: len(x) <= _MAX_TICKER_LEN and x.isupper(), cleanup_names(items)))
+
+_IMPACT_LEVELS = {"low", "medium", "high", "critical", "transformative"}
+def valid_impact_or_risk(val: Optional[str]):
+    if val and val.lower() in _IMPACT_LEVELS: return val.lower()
+
+def valid_tags(items: str|list[str]):
+    """Converts the tags into snake_case"""
+    return list(map(textcase.snake, cleanup_names(items)))
+
+def valid_tags(items: str|list[str]):
+    """Converts the tags into snake_case"""
+    return list(map(textcase.snake, cleanup_names(items)))
+
+def valid_context_tag(tag: str):
+    tag = textcase.snake(tag)
+    if len(tag) <= _MAX_NAME_LEN and tag not in _UNDETERMINED:
+        return tag
+
+_CLEANUP_FUNCTIONS = {
+    "regions": valid_tags,
+    "people": valid_tags,
+    "products": valid_tags,
+    "companies": valid_tags,
+    "stock_tickers": valid_stock_tickers,    
+    "entities": valid_tags,
+    "tags": valid_tags,
+    "macro_context": valid_context_tag,
+    "event_type": valid_context_tag,
+    "impact_level": valid_impact_or_risk,
+}
+
+def cleanup_digest_fields(digest, __context):
+    for field, cleanup_func in _CLEANUP_FUNCTIONS.items():
+        if val := getattr(digest, field, None):
+            setattr(digest, field, cleanup_func(val))
+
+# ────────────────────────────────────────────────
+# Schema generation utilities
+# ────────────────────────────────────────────────
+
+def typeinfo(annotation: Any) -> str:
+    """Render a readable type name from a Pydantic FieldInfo annotation."""
+
+    if annotation is None or annotation is type(None):  # noqa: E721
+        return "null"
+    if annotation is Any:
+        return "any"
+
+    # Primitive normalization (match requested output)
+    if annotation is int:
+        return "int"
+    if annotation is float:
+        return "float"
+    if annotation is bool:
+        return "bool"
+    if annotation is str:
+        return "str"
+
+    origin = get_origin(annotation)
+
+    # `Annotated[T, ...]` -> unwrap to `T`
+    if origin is getattr(types, "AnnotatedAlias", object()) or str(origin) == "typing.Annotated":
+        args = get_args(annotation)
+        return typeinfo(args[0]) if args else "any"
+    if origin is getattr(__import__("typing"), "Annotated", object()):
+        args = get_args(annotation)
+        return typeinfo(args[0]) if args else "any"
+
+    # `T | U` (py3.10+) and `Union[T, U]`
+    if origin is Union or isinstance(annotation, types.UnionType):
+        args = list(get_args(annotation))
+        non_none = [a for a in args if a is not type(None)]  # noqa: E721
+        if len(non_none) != len(args):
+            if len(non_none) == 1:
+                return f"{typeinfo(non_none[0])}|exclude empty"
+            return "|".join(typeinfo(a) for a in non_none) + "|exclude empty"
+        return "|".join(typeinfo(a) for a in args)
+
+    if origin in (list, List):
+        (item_t,) = get_args(annotation) or (Any,)
+        return f"list[{typeinfo(item_t)}]"
+
+    if isinstance(annotation, type):
+        # Normalize common typing-ish names while keeping unknowns readable
+        return getattr(annotation, "__name__", str(annotation))
+
+    # Fallback for uncommon typing constructs
+    return str(annotation).replace("typing.", "")
+
+def text_schema(cls) -> str:
+    return "\n".join(
+        f"{fname}: {typeinfo(finfo.annotation)}|{finfo.description}"
+        for fname, finfo in cls.model_fields.items()
+    )
+
+def text_value(val, item_delim="|", field_delim="\n") -> str:
+    lines = []
+    for field_name in val.model_fields:
+        if value := getattr(val, field_name):
+            if isinstance(value, list): value_str = item_delim.join(str(v) for v in value)
+            else: value_str = str(value)
+            lines.append(f"{field_name}={value_str}")
+    return field_delim.join(lines)
+

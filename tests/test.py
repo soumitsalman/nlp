@@ -1,9 +1,11 @@
 from datetime import datetime
+import logging
 import os, sys
 import json, re, random
 from dotenv import load_dotenv
 from icecream import ic
 from tqdm import tqdm
+from itertools import batched
 
 
 EMBEDDER_CONTEXT_LEN=512
@@ -11,10 +13,12 @@ DIGESTOR_CONTEXT_LEN=4096
 
 load_dotenv()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-os.makedirs(".test", exist_ok=True)
+
+test_dir = os.path.dirname(os.path.abspath(__file__))
+os.makedirs(os.path.join(test_dir, ".test"), exist_ok=True)
 
 def to_filename(name: str) -> str:
-    return "./.test/" + re.sub(r'[^a-zA-Z0-9]', '-', str(name))
+    return os.path.join(test_dir, ".test", re.sub(r'[^a-zA-Z0-9]', '-', str(name)))
 
 def load_json(filename):
     with open(filename, 'r') as file:
@@ -71,41 +75,39 @@ def test_embedder():
 # @log_runtime(logger=logger)
 def test_digestor():
     from tqdm import tqdm
-    from src import prompts, agents, models, utils
+    from src import digestors, models
 
-    BATCH_SIZE = 2
-    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
-    digestor = agents.text2text_agent_from_path(
-        model_path="soumitsr/led-base-article-digestor",
-        max_input_tokens=4096,
-        max_output_tokens=400,
-        output_parser=models.Digest.parse_compressed
-    )
-    with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
-        for i in range(0, len(data), BATCH_SIZE):
-            items = [d['content'] for d in data[i:i+BATCH_SIZE]]
-            [ic(r) for r in digestor.run_batch(items)]
-            pbar.update(len(items))
+    logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    BATCH_SIZE = 16
+    data_batches = list(batched(load_json(os.path.join(test_dir, "texts-for-nlp.json")), BATCH_SIZE))
+    result = []
+    with digestors.VLLMDigestor(
+        model_name="LiquidAI/LFM2.5-1.2B-Instruct",
+        output_model=models.Digest,
+        context_len=32768,
+    ) as digestor:
+        for chunk in tqdm(data_batches, desc="Progress: ", unit="bean chunk", total=len(data_batches)):
+            result.extend(ic(digestor.run_batch([d['content'] for d in chunk])))
+    save_json("digestor-structured-output-results", [digestors._safe_model_dump(r) for r in result])
 
 def test_extractor():
     from tqdm import tqdm
-    from src import digestors, models
+    from src import digestors
 
-    BATCH_SIZE = 2
-    data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
-    digestor = digestors.NamedEntityExtractor(
+    BATCH_SIZE = 5
+    data_batches = list(batched(load_json(os.path.join(test_dir, "texts-for-nlp.json"))[:60], BATCH_SIZE))
+
+    with digestors.NamedEntityExtractor(
         "knowledgator/modern-gliner-bi-base-v1.0",
         context_len=4096,
-        confidence=0.4
-    )
-    with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:
-        for i in range(0, len(data), BATCH_SIZE):
-            items = [d['content'] for d in data[i:i+BATCH_SIZE]]
-            [ic(r) for r in digestor.run_batch(items)]
-            pbar.update(len(items))
+        threshold=0.4
+    ) as extractor:
+        for chunk in tqdm(data_batches, total=len(data_batches), desc="Progress: ", unit="bean chunk"):
+            [ic(digestors._safe_model_dump(r)) for r in extractor.run_batch([d['content'] for d in chunk])]
 
 def test_digest_parser():
-    from src.models import Digest
+    from nlp.src.models_old import Digest
     responses = [
         "P:AI model training acceleration|Data compression advancements|AIOps framework rollout|Channel sales leadership change|Real-time AI data store|Storage system upgrade|Log data infrastructure replacement|CMO appointment|Sales leadership expansion|File collaboration VP appointment|CRO appointment|RAID integration for AI;E:Alluxio introduces Cache Only Write Mode|Atombeam raises $20M in A+ funding|CloudFabrix rebrands to Fabrix.ai|DDN appoints Wendy Stusrud|GridGain launches GridGain for AI|Hitachi Vantara wins pharmaceutical customer|Hydrolix ships Spark connector for Databricks|MinIO appoints Erik Frieberg|Quobyte expands to New York|Resilio appoints Eric Soffin|Scality appoints Emilio Roman|Xinnor wins customer with BeeGFS integration;D:Atombeam funding: $35M total|$84 patents issued to Atombeam|115 patents pending for Atombeam|HP overlap: Riahi & Ignomirello - 4 years|Read speeds: 29.2 GBps|Write speeds: 25.8 GBps;R:Financial sector (Quobyte expansion);N:Alluxio|Atombeam|CloudFabrix/Fabrix.ai|DDN|GridGain|Hitachi Vantara|Hydrolix|MinIO|Quobyte|Resilio|Scality|Xinnor|Asghar Riahi|Brian Ignomirello|Wendy Stusrud|Erik Frieberg|Emilio Roman|Peter Brennan;C:AI|Storage|Data Management|Cloud Computing|AIOps;S:neutral",
 
@@ -185,7 +187,7 @@ def test_deterministic_reject():
 
 
 def test_article_parser():
-    from src.models import Metadata
+    from nlp.src.models_old import Metadata
     inputs = load_json(os.path.join(os.path.dirname(__file__), "text-for-generator.json"))
     articles = [Metadata.parse_markdown(inp["content"]) for inp in inputs]
     for a in articles:
@@ -193,7 +195,7 @@ def test_article_parser():
 
 def test_digestor_perf():
     from tqdm import tqdm
-    from src import prompts, agents, models, utils
+    from src import prompts, agents, utils
 
     BATCH_SIZE = 2
     data = random.sample(load_json("./tests/texts-for-nlp.json"), 10)
@@ -215,7 +217,7 @@ def test_digestor_perf():
             model_path=path,
             max_input_tokens=4096,
             max_output_tokens=400,
-            output_parser=models.Digest.parse_compressed
+            output_parser=models_old.Digest.parse_compressed
         )
         print("=========", path, "===========")
         with tqdm(total=len(data), desc="Progress: ", unit="bean") as pbar:

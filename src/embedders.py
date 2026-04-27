@@ -10,8 +10,8 @@ from .utils import *
 
 logger = logging.getLogger(__name__)
 
-_MAX_CHUNKS = 8
-_OVERFLOW=32
+_MAX_CHUNKS = 16
+_OVERFLOW = 144
 VECTOR = list[float]
 
 class EmbedderBase(ABC):
@@ -76,15 +76,10 @@ class EmbedderBase(ABC):
         This calls the embedder directly without chunking or truncation for faster response"""
         if texts: return self._embed(texts).tolist()   
 
-    @abstractmethod
-    def _unload_model(self):
-        pass
-
     def __enter__(self):
         return self
-
+    
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._unload_model()
         return False
 
 class RemoteEmbeddings(EmbedderBase):
@@ -131,10 +126,11 @@ class LlamaCppEmbeddings(EmbedderBase):
             self._model = Llama(model_path=self.model_path, n_ctx=self.context_len, n_threads_batch=n_threads, n_threads=n_threads, embedding=True, verbose=False)
         return self._model
 
-    def _unload_model(self):
-        if not self._model: return
-        del self._model
-        self._model = None        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._model:
+            del self._model
+            self._model = None
+        return False
         
 class TransformerEmbeddings(EmbedderBase):
     _model = None
@@ -166,11 +162,12 @@ class TransformerEmbeddings(EmbedderBase):
             self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device)
         return self._model
 
-    def _unload_model(self):
-        if not self._model: return
-        del self._model
-        self._model = None
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._model:
+            del self._model
+            self._model = None
         clear_gpu_cache()
+        return False
     
 class OVEmbeddings(EmbedderBase):
     _model = None
@@ -195,10 +192,11 @@ class OVEmbeddings(EmbedderBase):
             self._model = OVSentenceTransformer.from_pretrained(self.model_path, compile={"num_threads": os.cpu_count()-1})
         return self._model
 
-    def _unload_model(self):
-        if not self._model: return
-        del self._model
-        self._model = None
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._model:
+            del self._model
+            self._model = None
+        return False
     
 class ORTEmbeddings(EmbedderBase):
     _model = None
@@ -228,10 +226,35 @@ class ORTEmbeddings(EmbedderBase):
             self._model = SentenceTransformer(self.model_path,  cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=self.tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx", 'provider': 'CPUExecutionProvider'})
         return self._model
 
-    def _unload_model(self):
-        if not self._model: return
-        del self._model
-        self._model = None
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._model:
+            del self._model
+            self._model = None
+        return False
+
+class VLLMEmbedder(EmbedderBase):
+    def __init__(self, model_name: str, context_len: int):
+        super().__init__(context_len)
+        self.model_name = model_name
+        self._llm = None
+
+    def _embed(self, texts: str|list[str]):
+        embs = self._llm.embed(texts, use_tqdm=False)
+        return [emb.outputs.embedding for emb in embs]
+    
+    def __enter__(self):
+        if not self._llm:
+            from vllm import LLM
+            self._llm = LLM(model=self.model_name)
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._llm:
+            del self._llm
+            self._llm = None            
+        clear_gpu_cache()
+        return False
+
 
 def from_path(
     model_path: str, 
@@ -244,6 +267,7 @@ def from_path(
     if model_path.startswith(LLAMACPP_PREFIX): return LlamaCppEmbeddings(model_path.removeprefix(LLAMACPP_PREFIX), context_len)
     if model_path.startswith(OPENVINO_PREFIX): return OVEmbeddings(model_path.removeprefix(OPENVINO_PREFIX), context_len)
     if model_path.startswith(ONNX_PREFIX): return ORTEmbeddings(model_path.removeprefix(ONNX_PREFIX), context_len)
+    if model_path.startswith(VLLM_PREFIX): return VLLMEmbedder(model_path.removeprefix(VLLM_PREFIX), context_len)
     return TransformerEmbeddings(model_path, context_len)
 
     

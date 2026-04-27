@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 LLAMACPP_PREFIX = "llamacpp://"
 ONNX_PREFIX = "onnx://"
 OPENVINO_PREFIX = "openvino://"
+VLLM_PREFIX = "vllm://"
 API_URL_PREFIX = "https://"
 NUM_THREADS = os.cpu_count()
 
@@ -55,10 +56,7 @@ def run_batch(func: Callable, items, num_threads: int = os.cpu_count()):
         results = list(executor.map(func, items))
     return results  
 
-distinct_items = lambda items: list({item.strip().lower(): item for item in items}.values()) if items else items
-first_n = lambda items, n: items[:n] if items else items
 split_parts = lambda text, sep=r'[,]+': [part.strip() for part in re.split(sep, text) if part.strip()]
-isalphaorspace = lambda text: bool(re.match(r"^[a-zA-Z\s]+$", text))
 
 def remove_before(text: str, sub: str) -> str:
     index = text.find(sub)
@@ -78,4 +76,5 @@ def clear_gpu_cache():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
+
 
