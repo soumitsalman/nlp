@@ -177,7 +177,7 @@ class TransformerDigestor(DigestorBase):
         if self._tokenizer:
             del self._tokenizer
             self._tokenizer = None
-        super().__exit__(exc_type, exc_val, exc_tb)
+        return super().__exit__(exc_type, exc_val, exc_tb)
 
     def _run_batch(self, prompts, **kwargs):
         import torch
@@ -319,7 +319,7 @@ class NamedEntityExtractor(DigestorBase):
         if self._label_embeddings is not None:
             del self._label_embeddings
             self._label_embeddings = None
-        super().__exit__(exc_type, exc_val, exc_tb)
+        return super().__exit__(exc_type, exc_val, exc_tb)
 
     def _parse_output(self, response):
         res = defaultdict(list)
@@ -442,21 +442,21 @@ def from_path(
 
     if model_path.startswith(OPENVINO_PREFIX):
         return OVDigestor(
-            model_path,
+            model_path.removeprefix(OPENVINO_PREFIX),
             context_len=context_len,
             output_model=Digest,
             **kwargs,
         )
     elif model_path.startswith(ONNX_PREFIX):
         return ORTDigestor(
-            model_path,
+            model_path.removeprefix(ONNX_PREFIX),
             context_len=context_len,
             output_model=Digest,
             **kwargs,
         )
     elif model_path.startswith(VLLM_PREFIX):
         return VLLMDigestor(
-            model_path,
+            model_path.removeprefix(VLLM_PREFIX),
             context_len=context_len,
             output_model=Digest,
             **kwargs
