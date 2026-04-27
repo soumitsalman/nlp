@@ -11,7 +11,7 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 _MAX_CHUNKS = 16
-_OVERFLOW = 144
+_OVERFLOW = 160
 VECTOR = list[float]
 
 class EmbedderBase(ABC):

@@ -350,7 +350,7 @@ class VLLMDigestor(DigestorBase):
     def _create_prompts(self, input_messages: list[str]):
         prompt = lambda msg: [
             {"role": "system", "content": self._STRUCTURED_SYS_MSG},
-            {"role": "user", "content": self._INST_MSG.format(fields=",".join(self.output_model.model_fields.keys()), text=msg[:self.context_len>>2])},
+            {"role": "user", "content": self._INST_MSG.format(fields=",".join(self.output_model.model_fields.keys()), text=msg[:self.context_len>>1])},
         ]
         return [prompt(msg) for msg in input_messages]        
 
