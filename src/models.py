@@ -70,7 +70,6 @@ class Digest(BaseModel):
         ),
     )    
     future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory.")
-    
 
     def model_post_init(self, __context):
         cleanup_digest_fields(self, __context)
@@ -555,7 +554,7 @@ def cleanup_names(items: list[str]):
     texts = filter(lambda tag: tag and len(tag) <= _MAX_NAME_LEN and tag.lower() not in _UNDETERMINED, texts)
     return list({item.lower(): item for item in texts}.values())
 
-_MAX_TICKER_LEN = 5
+_MAX_TICKER_LEN = 6
 def valid_stock_tickers(items: list[str]):
     return list(filter(lambda x: len(x) <= _MAX_TICKER_LEN and x.isupper(), cleanup_names(items)))
 
