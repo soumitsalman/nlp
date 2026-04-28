@@ -7,20 +7,20 @@ from pydantic import BaseModel, Field
 
 class Digest(BaseModel):
     # keywords
-    regions: List[str] = Field(default_factory=list, description="List of specified geographic regions/locations. ex: USA,EU,China etc. Exclude=grouped/aggregated qualifications - 30 countries.")
-    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. Exclude=generic,grouped/aggregated qualifications - 14 leaders.")
-    products: List[str] = Field(default_factory=list, description="List of specified products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. Exclude=generic,grouped/aggregated qualifications - 3 new products.")
-    companies: List[str] = Field(default_factory=list, description="List of specified companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. Exclude=generic,grouped/aggregated qualifications - 5 companies.")
+    regions: List[str] = Field(default_factory=list, description="List of specified geographic regions/locations. ex: USA,EU,China etc. Exclude=grouping - 30 countries.")
+    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. Exclude=grouping - 14 leaders.")
+    products: List[str] = Field(default_factory=list, description="List of specified products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. Exclude=grouping - 3 new products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. Exclude=grouping - 5 companies.")
     stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock tickers. ex: TSLA, GLD, NVDA etc.")    
     tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords. ex: agentic_ai,sovereign_compute,defense_tech etc.")
     
     # intelligence
-    headline: Optional[str] = Field(default=None, description="1 sentence, Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
+    briefing: Optional[str] = Field(default=None, description="Intelligence briefing. Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
     key_events: List[str] = Field(
         default_factory=list,
         description=(
-            "Sequences of events,facts,datapoints. "
-            "Complete sentences, Format=[TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT]. "
+            "Sequences of key facts,events,datapoints for intelligence briefing. "
+            "Format=[TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT]. "
             "ex: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
         )
     )        

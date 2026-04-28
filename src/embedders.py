@@ -10,9 +10,9 @@ from .utils import *
 
 logger = logging.getLogger(__name__)
 
-_MAX_CHUNKS = 16
+_MAX_CHUNKS = 9
 _SPECIAL_TOKEN_MARGIN = 8  # BOS/EOS/CLS/SEP overhead; chunk_size = context_len - this
-_OVERLAP_MARGIN = 16  # to ensure that we don't lose important context when merging chunk embeddings
+_OVERLAP_MARGIN = 20  # to ensure that we don't lose important context when merging chunk embeddings
 VECTOR = list[float]
 
 _too_short = lambda chunk: len(chunk) < (_OVERLAP_MARGIN<<2)
