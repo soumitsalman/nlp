@@ -79,7 +79,10 @@ class EmbedderBase(ABC):
     def __call__(self, texts: str|list[str]):
         """This takes a string or an list of strings as an input.
         This calls the embedder directly without chunking or truncation for faster response"""
-        if texts: return self._embed(texts).tolist()   
+        if texts: 
+            res = self._embed(texts)
+            if hasattr(res, "tolist"): return res.tolist()
+            return res
 
     def __enter__(self):
         return self
