@@ -12,9 +12,10 @@ from .utils import *
 from icecream import ic
 
 DEFAULT_SAMPLING_PARAMS = {
-    "temperature": 0.3,
+    "temperature": 0.1,
     "top_k": 50,
-    "repetition_penalty": 1.15,
+    "top_p": 1.0,
+    "repetition_penalty": 1.05,
 }
 DEFAULT_CONTEXT_LEN = 32768
 
@@ -36,7 +37,6 @@ class DigestorBase(ABC):
         self.sampling_params = {
             **DEFAULT_SAMPLING_PARAMS,
             **sampling_params,
-            "max_tokens": context_len,
         }
         self._llm = None
         self._sampling_params = None
@@ -366,9 +366,10 @@ class VLLMDigestor(DigestorBase):
             self._llm = LLM(model=self.model_name)
             self._sampling_params = SamplingParams(
                 **self.sampling_params,
+                max_tokens=2048,
+                stop=["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
                 structured_outputs=StructuredOutputsParams(
-                    json=self.output_model.model_json_schema(),
-                    disable_any_whitespace=True,
+                    json=self.output_model.model_json_schema()
                 ),
             )
         return self

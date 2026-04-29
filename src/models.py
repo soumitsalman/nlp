@@ -76,7 +76,20 @@ class Digest(BaseModel):
 
     @classmethod
     def model_text_schema(cls):
-        return text_schema(cls)
+        return "\n".join(
+            f"{fname}: {typeinfo(finfo.annotation)}|{finfo.description}"
+            for fname, finfo in cls.model_fields.items()
+        )
+
+    @classmethod
+    def model_json_schema(cls):
+        schema = super().model_json_schema()
+        for name, definition in schema["properties"].items():
+            if 'anyOf' in definition:
+                definition['type']="string"
+                del definition['anyOf']
+        return schema
+
 
     def __str__(self):
         return text_value(self, field_delim="\n")
@@ -645,12 +658,6 @@ def typeinfo(annotation: Any) -> str:
 
     # Fallback for uncommon typing constructs
     return str(annotation).replace("typing.", "")
-
-def text_schema(cls) -> str:
-    return "\n".join(
-        f"{fname}: {typeinfo(finfo.annotation)}|{finfo.description}"
-        for fname, finfo in cls.model_fields.items()
-    )
 
 def text_value(val, item_delim="|", field_delim="\n") -> str:
     lines = []
