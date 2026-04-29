@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 
 class Digest(BaseModel):
     # keywords
-    regions: List[str] = Field(default_factory=list, description="List of specified geographic regions/locations. ex: USA,EU,China etc. Exclude=grouping - 30 countries.")
-    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. Exclude=grouping - 14 leaders.")
-    products: List[str] = Field(default_factory=list, description="List of specified products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. Exclude=grouping - 3 new products.")
-    companies: List[str] = Field(default_factory=list, description="List of specified companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. Exclude=grouping - 5 companies.")
-    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock tickers. ex: TSLA, GLD, NVDA etc.")    
+    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. ex: USA,EU,China etc. exclude_pattern=N countries.")
+    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. exclude_pattern=N leaders.")
+    products: List[str] = Field(default_factory=list, description="List of specified names products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. exclude_pattern=N products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. exclude_pattern=N companies.")
+    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. ex: TSLA, GLD, NVDA etc.")    
     tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords. ex: agentic_ai,sovereign_compute,defense_tech etc.")
     
     # intelligence
