@@ -12,10 +12,10 @@ from .utils import *
 from icecream import ic
 
 DEFAULT_SAMPLING_PARAMS = {
-    "temperature": 0.1,
+    "temperature": 0.2,
     "top_k": 50,
     "top_p": 1.0,
-    "repetition_penalty": 1.05,
+    "repetition_penalty": 1.15,
 }
 DEFAULT_CONTEXT_LEN = 32768
 
