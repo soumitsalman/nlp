@@ -13,8 +13,8 @@ from icecream import ic
 
 DEFAULT_SAMPLING_PARAMS = {
     "temperature": 0.3,
-    "top_k": 60,
-    "repetition_penalty": 1.05,
+    "top_k": 50,
+    "repetition_penalty": 1.15,
 }
 DEFAULT_CONTEXT_LEN = 32768
 
