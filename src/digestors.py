@@ -1,4 +1,5 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 import json
 import logging
@@ -20,6 +21,7 @@ DEFAULT_SAMPLING_PARAMS = {
 DEFAULT_CONTEXT_LEN = 32768
 
 log = logging.getLogger("digestor")
+
 
 class DigestorBase(ABC):
     def __init__(
@@ -53,21 +55,25 @@ class DigestorBase(ABC):
             self._sampling_params = None
             clear_gpu_cache()
         return False
-    
+
     def _create_prompts(self, input_messages: list[str]):
         return input_messages
-    
+
     def _parse_output(self, response: str):
         response = _strip_fences(response)
         try:
-            if self.response_mode == "json": return self.output_model.model_validate_json(response)
-            if self.response_mode == "compressed": return parse_compressed(response)
-            if self.response_mode == "markdown": return parse_markdown(response)
-            if self.response_mode == "tool_call": raise NotImplementedError
+            if self.response_mode == "json":
+                return self.output_model.model_validate_json(response)
+            if self.response_mode == "compressed":
+                return parse_compressed(response)
+            if self.response_mode == "markdown":
+                return parse_markdown(response)
+            if self.response_mode == "tool_call":
+                raise NotImplementedError
             return response
-        except: 
+        except:
             log.warning("failed parsing: %s", response, exc_info=True)
-    
+
     @abstractmethod
     def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
         raise NotImplementedError()
@@ -123,6 +129,7 @@ class LocalTokenizer:
     def eos_token_id(self):
         return self.tokenizer.eos_token_id
 
+
 # needs 1.3 for repetition penalty support, and max_new_tokens = 384
 class TransformerDigestor(DigestorBase):
     device: str = None
@@ -159,12 +166,12 @@ class TransformerDigestor(DigestorBase):
             self._llm = AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_name, dtype=self.dtype, device_map=self.device
             ).to(self.device)
-        
+
             self._sampling_params = {
                 **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
                 "no_repeat_ngram_size": 3,
             }
-        
+
             self._tokenizer = LocalTokenizer(
                 self.model_name,
                 self.context_len,
@@ -193,7 +200,8 @@ class TransformerDigestor(DigestorBase):
             self.__enter__()
 
         generated_texts = self._run_batch(self._create_prompts(input_messages))
-        return [self._parse_output(text) for text in generated_texts]    
+        return [self._parse_output(text) for text in generated_texts]
+
 
 class OVDigestor(TransformerDigestor):
     def __enter__(self):
@@ -201,7 +209,7 @@ class OVDigestor(TransformerDigestor):
             from optimum.intel.openvino import OVModelForSeq2SeqLM
 
             self._llm = OVModelForSeq2SeqLM.from_pretrained(self.model_name)
-            
+
             self._tokenizer = LocalTokenizer(
                 self.model_name,
                 self.context_len,
@@ -238,7 +246,9 @@ class ORTDigestor(TransformerDigestor):
                         "execution_mode": "parallel",
                     }
                 },
-                provider="CUDAExecutionProvider" if torch.cuda.is_available() else "CPUExecutionProvider",
+                provider="CUDAExecutionProvider"
+                if torch.cuda.is_available()
+                else "CPUExecutionProvider",
             )
 
             self._tokenizer = LocalTokenizer(
@@ -246,7 +256,7 @@ class ORTDigestor(TransformerDigestor):
                 self.context_len,
                 self.max_new_tokens,
                 self.device,
-            )     
+            )
 
             self._sampling_params = {
                 **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
@@ -313,7 +323,9 @@ class NamedEntityExtractor(DigestorBase):
                 max_length=self.context_len,
                 map_location="cuda" if torch.cuda.is_available() else "cpu",
             )
-            self._label_embeddings = self._llm.encode_labels(self._LABELS, batch_size=len(self._LABELS))
+            self._label_embeddings = self._llm.encode_labels(
+                self._LABELS, batch_size=len(self._LABELS)
+            )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -332,33 +344,43 @@ class NamedEntityExtractor(DigestorBase):
 
     def run_batch(self, input_messages: list[str]):
         entities = self._llm.batch_predict_with_embeds(
-            input_messages, 
-            labels_embeddings=self._label_embeddings, 
+            input_messages,
+            labels_embeddings=self._label_embeddings,
             labels=self._LABELS,
             threshold=self.threshold,
         )
         return [self._parse_output(group) if group else None for group in entities]
 
- 
+
 class VLLMDigestor(DigestorBase):
     _STRUCTURED_SYS_MSG = """RETURN=JSON object matching schema
     EXCLUDE=unspecified data, implied assessments, assumptions
     REMOVE=N/A,null values, empty fields
-    AVOID=markdown, prose, code fences, null placeholders, implied information, assumptions""" 
+    AVOID=markdown, prose, code fences, null placeholders, implied information, assumptions"""
 
-    _INST_MSG = """DETERMINE {fields} FROM content IF specified\n=== content ===\n{text}"""
+    _INST_MSG = (
+        """DETERMINE {fields} FROM content IF specified\n=== content ===\n{text}"""
+    )
 
     def _create_prompts(self, input_messages: list[str]):
         prompt = lambda msg: [
             {"role": "system", "content": self._STRUCTURED_SYS_MSG},
-            {"role": "user", "content": self._INST_MSG.format(fields=",".join(self.output_model.model_fields.keys()), text=msg[:self.context_len>>1])},
+            {
+                "role": "user",
+                "content": self._INST_MSG.format(
+                    fields=",".join(self.output_model.model_fields.keys()),
+                    text=msg[: self.context_len >> 1],
+                ),
+            },
         ]
-        return [prompt(msg) for msg in input_messages]        
+        return [prompt(msg) for msg in input_messages]
 
     def _parse_output(self, text: str):
-        try: return self.output_model.model_validate_json(_strip_fences(text))
-        except Exception: log.warning("failed parsing: %s", text, exc_info=True)
-    
+        try:
+            return self.output_model.model_validate_json(_strip_fences(text))
+        except Exception:
+            log.warning("failed parsing: %s", text, exc_info=True)
+
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
@@ -375,25 +397,42 @@ class VLLMDigestor(DigestorBase):
             )
         return self
 
-    def run_batch(self, input_messages: list[str]) -> list[Digest|None]:
-        responses = self._llm.chat(self._create_prompts(input_messages), sampling_params=self._sampling_params, use_tqdm=False)
-        return [self._parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
+        responses = self._llm.chat(
+            self._create_prompts(input_messages),
+            sampling_params=self._sampling_params,
+            use_tqdm=False,
+        )
+        return [
+            self._parse_output(resp.outputs[0].text) if resp.outputs else None
+            for resp in responses
+        ]
 
 
 class VLLMDigestorToolCall(VLLMDigestor):
     TOOL_NAME = "extract_fields"
+
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
-            
+
             self._llm = LLM(model=self.model_name)
             self._sampling_params = SamplingParams(**self.sampling_params)
         return self
 
     def _create_prompts(self, input_messages: list[str]):
         prompt = lambda msg: [
-            {"role": "system", "content": f"List of tools: {json.dumps([self._build_tool_schema(self.output_model)])}"},
-            {"role": "user", "content":  self._INST_MSG.format(fields=",".join(self.output_model.model_fields.keys()), text=msg[:self.context_len >> 2])},
+            {
+                "role": "system",
+                "content": f"List of tools: {json.dumps([self._build_tool_schema(self.output_model)])}",
+            },
+            {
+                "role": "user",
+                "content": self._INST_MSG.format(
+                    fields=",".join(self.output_model.model_fields.keys()),
+                    text=msg[: self.context_len >> 2],
+                ),
+            },
         ]
         return [prompt(msg) for msg in input_messages]
 
@@ -407,7 +446,9 @@ class VLLMDigestorToolCall(VLLMDigestor):
             payload = payload[0]
 
         if not isinstance(payload, dict):
-            raise ValueError(f"Unexpected tool call payload type: {type(payload).__name__}")
+            raise ValueError(
+                f"Unexpected tool call payload type: {type(payload).__name__}"
+            )
 
         if payload.get("name") == TOOL_NAME:
             arguments = payload.get("arguments", {})
@@ -416,17 +457,25 @@ class VLLMDigestorToolCall(VLLMDigestor):
         elif payload.get("tool_name") == TOOL_NAME:
             arguments = payload.get("arguments", {})
         else:
-            raise ValueError(f"Could not find {TOOL_NAME} tool call in payload: {payload}")
+            raise ValueError(
+                f"Could not find {TOOL_NAME} tool call in payload: {payload}"
+            )
 
         if isinstance(arguments, str):
             arguments = json.loads(arguments)
 
         return self.output_model.model_validate(arguments)
-    
-    def run_batch(self, input_messages: list[str]) -> list[Digest|None]:
-        responses = self._llm.chat(self._create_prompts(input_messages), sampling_params=self._sampling_params, use_tqdm=False)
-        return [self._parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
 
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
+        responses = self._llm.chat(
+            self._create_prompts(input_messages),
+            sampling_params=self._sampling_params,
+            use_tqdm=False,
+        )
+        return [
+            self._parse_output(resp.outputs[0].text) if resp.outputs else None
+            for resp in responses
+        ]
 
     @classmethod
     def _build_tool_schema(cls, model_type: Type[BaseModel]):
@@ -436,12 +485,90 @@ class VLLMDigestorToolCall(VLLMDigestor):
             "parameters": model_type.model_json_schema(),
         }
 
-def from_path(
-    model_path: str,
-    context_len: int = None,
-    **kwargs
-) -> DigestorBase:
 
+class OpenAIDigestor(DigestorBase):
+    _STRUCTURED_SYS_MSG = VLLMDigestor._STRUCTURED_SYS_MSG
+    _INST_MSG = VLLMDigestor._INST_MSG
+
+    def __init__(
+        self,
+        model_name: str,
+        base_url: str,
+        api_key: str,
+        context_len: int,
+        output_model: Type[BaseModel] = Digest,
+        response_mode: str = "json",
+        **sampling_params,
+    ):
+        super().__init__(
+            model_name=model_name,
+            context_len=context_len,
+            output_model=output_model,
+            response_mode=response_mode,
+            **sampling_params,
+        )
+        self.base_url = base_url
+        self.api_key = api_key
+
+    def __enter__(self):
+        if not self._llm:
+            from openai import OpenAI
+
+            self._llm = OpenAI(
+                api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3
+            )
+        return self
+
+    def _create_prompts(self, input_messages: list[str]):
+        prompt = lambda msg: [
+            {"role": "system", "content": self._STRUCTURED_SYS_MSG},
+            {
+                "role": "user",
+                "content": self._INST_MSG.format(
+                    fields=",".join(self.output_model.model_fields.keys()),
+                    text=msg[: self.context_len >> 1],
+                ),
+            },
+        ]
+        return [prompt(msg) for msg in input_messages]
+
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
+        from openai import APIError
+
+        prompts = self._create_prompts(input_messages)
+        results = [None] * len(prompts)
+        errors = []
+
+        def process_single(idx, messages):
+            try:
+                response = self._llm.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=self.sampling_params.get("temperature", 0.2),
+                    top_p=self.sampling_params.get("top_p", 1.0),
+                    max_tokens=self.sampling_params.get("max_tokens", 2048),
+                    response_format={"type": "json_object", "json_schema": self.output_model.model_json_schema()}
+                    if self.response_mode == "json"
+                    else None,
+                )
+                text = response.choices[0].message.content
+                return idx, self._parse_output(text)
+            except Exception as e:
+                log.warning("OpenAI API error at index %d: %s", idx, str(e))
+                return idx, None
+
+        with ThreadPoolExecutor(max_workers=min(len(prompts), 8)) as executor:
+            futures = [
+                executor.submit(process_single, i, p) for i, p in enumerate(prompts)
+            ]
+            for future in futures:
+                idx, result = future.result()
+                results[idx] = result
+
+        return results
+
+
+def from_path(model_path: str, context_len: int = None, **kwargs) -> DigestorBase:
     if model_path.startswith(OPENVINO_PREFIX):
         return OVDigestor(
             model_path.removeprefix(OPENVINO_PREFIX),
@@ -461,22 +588,44 @@ def from_path(
             model_path.removeprefix(VLLM_PREFIX),
             context_len=context_len,
             output_model=Digest,
-            **kwargs
+            **kwargs,
+        )
+    elif model_path.startswith(OPENAI_PREFIX):
+        model = model_path.removeprefix(OPENAI_PREFIX)
+        base_url = kwargs.pop("base_url")
+        api_key = kwargs.pop("api_key")
+        return OpenAIDigestor(
+            model,
+            base_url=base_url,
+            api_key=api_key,
+            context_len=context_len,
+            output_model=Digest,
+            **kwargs,
         )
     else:
         return TransformerDigestor(
-            model_path,
-            context_len=context_len,
-            output_model=Digest,
-            **kwargs
+            model_path, context_len=context_len, output_model=Digest, **kwargs
         )
 
+
 def _strip_fences(text: str) -> str:
-    return text.strip().removeprefix("```json").removeprefix("```markdown").removeprefix("```").removesuffix("```").strip()
+    return (
+        text.strip()
+        .removeprefix("```json")
+        .removeprefix("```markdown")
+        .removeprefix("```")
+        .removesuffix("```")
+        .strip()
+    )
+
 
 def _safe_model_dump(item: Optional[Digest]):
-    if item is None: return None
-    return item.model_dump(mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True)
+    if item is None:
+        return None
+    return item.model_dump(
+        mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True
+    )
+
 
 M_GIST = "# GIST"
 M_CATEGORIES = "# DOMAINS"
@@ -527,9 +676,7 @@ def parse_markdown(response: str):
         elif C_REGIONS in last:
             digest.regions = split_parts(line)
         elif M_SUMMARY in last:
-            digest.summary = (
-                (digest.summary + "\n" + line) if digest.summary else line
-            )
+            digest.summary = (digest.summary + "\n" + line) if digest.summary else line
         elif C_KEYPOINTS in last:
             if not digest.keypoints:
                 digest.keypoints = []
@@ -556,6 +703,8 @@ COMPRESSED_FIELDS = [
     C_CATEGORIES,
     C_SENTIMENTS,
 ]
+
+
 def parse_compressed(response: str):
     if not response:
         return response
@@ -569,9 +718,7 @@ def parse_compressed(response: str):
                 response.find(";" + next_key, current_pos + 2)
                 for next_key in results.keys()
             ]
-            end = min(
-                [pos for pos in next_key_pos if pos > -1], default=len(response)
-            )
+            end = min([pos for pos in next_key_pos if pos > -1], default=len(response))
             if response[end - 1] == ";":
                 ext = response[current_pos + 2 : end - 1]
             else:
@@ -589,8 +736,6 @@ def parse_compressed(response: str):
         if not value:
             continue
         response += key + "|".join(v.strip() for v in value) + ";"
-
-    
 
     return Digest(
         raw=response,
