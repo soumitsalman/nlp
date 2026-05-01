@@ -225,9 +225,10 @@ class OVDigestor(TransformerDigestor):
 class ORTDigestor(TransformerDigestor):
     def __enter__(self):
         if not self._llm:
-            from optimum.onnxruntime import ORTModelForSeq2SeqLM
+            import torch
+            from optimum.onnxruntime import ORTModelForCausalLM
 
-            self._llm = ORTModelForSeq2SeqLM.from_pretrained(
+            self._llm = ORTModelForCausalLM.from_pretrained(
                 self.model_name,
                 provider_options={
                     "CPUExecutionProvider": {
@@ -237,7 +238,7 @@ class ORTDigestor(TransformerDigestor):
                         "execution_mode": "parallel",
                     }
                 },
-                provider="CPUExecutionProvider",
+                provider="CUDAExecutionProvider" if torch.cuda.is_available() else "CPUExecutionProvider",
             )
 
             self._tokenizer = LocalTokenizer(
@@ -256,9 +257,9 @@ class ORTDigestor(TransformerDigestor):
         return self
 
     def _run_batch(self, prompts):
-        input_tokens = self.tokenizer.tokenize_prompts(prompts)
-        output_tokens = self.model.generate(**input_tokens, **self._sampling_params)
-        return self.tokenizer.batch_decode(output_tokens)
+        input_tokens = self._tokenizer.tokenize_prompts(prompts)
+        output_tokens = self._llm.generate(**input_tokens, **self._sampling_params)
+        return self._tokenizer.batch_decode(output_tokens)
 
 
 class NamedEntityExtractor(DigestorBase):
