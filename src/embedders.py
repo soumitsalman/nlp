@@ -149,7 +149,7 @@ class TransformerEmbeddings(EmbedderBase):
         import torch
         from transformers import AutoTokenizer
 
-        super().__init__(context_len, tokenizer_fn=AutoTokenizer.from_pretrained(model_path, max_length=context_len, use_fast=True).encode)
+        super().__init__(context_len, tokenizer_fn=AutoTokenizer.from_pretrained(model_path, truncation=False, use_fast=True).encode)
         self.model_path = model_path
         self.tokenizer_kwargs = {
             "truncation": True,
@@ -157,23 +157,22 @@ class TransformerEmbeddings(EmbedderBase):
             "padding": True
         }
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model = None
 
     def _embed(self, texts: str|list[str]):
         import torch
         with torch.inference_mode(), torch.no_grad():
-            embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
-        return embs
+            embs = self._model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+        return embs    
     
-    @property
-    def model(self):
+    def __enter__(self):
         if not self._model:
             from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device)
-        return self._model
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._model:
-            del self._model
             self._model = None
         clear_gpu_cache()
         return False
@@ -211,40 +210,41 @@ class OVEmbeddings(EmbedderBase):
         return False
     
 class ORTEmbeddings(EmbedderBase):
-    _model = None
-    model_path = None
-    context_len = None
-
     def __init__(self, model_path: str, context_len: int):
+        import torch
         from transformers import AutoTokenizer
 
-        _tokenizer = AutoTokenizer.from_pretrained(model_path, max_length=context_len, use_fast=True)
-        super().__init__(context_len, tokenizer_fn=_tokenizer.encode)
+        super().__init__(context_len, tokenizer_fn=AutoTokenizer.from_pretrained(model_path, truncation=False, use_fast=True).encode)
         self.model_path = model_path
-        self.context_len = context_len
         self.tokenizer_kwargs = {
             "truncation": True,
             "max_length": context_len,
             "padding": True
         }
+        self.device = "CUDAExecutionProvider" if torch.cuda.is_available() else "CPUExecutionProvider"
+        self._model = None
 
     def _embed(self, texts: str|list[str]):
         import torch
         with torch.inference_mode(), torch.no_grad():
-            embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+            embs = self._model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
 
-    @property
-    def model(self):
+    def __enter__(self):
         if not self._model:
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_path,  cache_folder=os.getenv('HF_HOME'), tokenizer_kwargs=self.tokenizer_kwargs, backend="onnx", model_kwargs={'file_name': "model.onnx", 'provider': 'CPUExecutionProvider'})
-        return self._model
+            self._model = SentenceTransformer(
+                self.model_path, 
+                backend="onnx",
+                model_kwargs={"provider": self.device, "file_name": "onnx/model.onnx"},
+                processor_kwargs=self.tokenizer_kwargs,
+            )
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._model:
-            del self._model
+        if self._model: 
             self._model = None
+        clear_gpu_cache()
         return False
 
 class VLLMEmbedder(EmbedderBase):
