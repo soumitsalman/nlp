@@ -316,13 +316,16 @@ class NamedEntityExtractor(DigestorBase):
     def __enter__(self):
         if not self._llm:
             import torch
+            import torch._inductor.config as config
             from gliner import GLiNER
 
+            config.fx_graph_cache = True
             self._llm = GLiNER.from_pretrained(
                 self.model_name,
                 max_length=self.context_len,
                 map_location="cuda" if torch.cuda.is_available() else "cpu",
             )
+            self._llm.model = torch.compile(self._llm.model)
             self._label_embeddings = self._llm.encode_labels(
                 self._LABELS, batch_size=len(self._LABELS)
             )
