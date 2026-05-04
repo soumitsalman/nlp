@@ -173,7 +173,7 @@ class TransformerEmbeddings(EmbedderBase):
 
             config.fx_graph_cache = True
             self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device)
-            self._model = torch.compile(self._model)
+            self._model = torch.compile(self._model, mode="reduce-overhead")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

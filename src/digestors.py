@@ -325,7 +325,7 @@ class NamedEntityExtractor(DigestorBase):
                 max_length=self.context_len,
                 map_location="cuda" if torch.cuda.is_available() else "cpu",
             )
-            self._llm.model = torch.compile(self._llm.model)
+            self._llm.model = torch.compile(self._llm.model, mode="reduce-overhead")
             self._label_embeddings = self._llm.encode_labels(
                 self._LABELS, batch_size=len(self._LABELS)
             )
