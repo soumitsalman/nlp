@@ -168,12 +168,12 @@ class TransformerEmbeddings(EmbedderBase):
     def __enter__(self):
         if not self._model:
             import torch
-            import torch._inductor.config as config            
+            # import torch._inductor.config as config            
             from sentence_transformers import SentenceTransformer            
 
-            config.fx_graph_cache = True
+            # config.fx_graph_cache = True
             self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device)
-            self._model = torch.compile(self._model, mode="reduce-overhead")
+            # self._model = torch.compile(self._model, mode="reduce-overhead")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
