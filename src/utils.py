@@ -1,7 +1,7 @@
 import os
 import re
-import tiktoken
-import math
+# import tiktoken
+# import math
 from typing import Callable
 from concurrent.futures import ThreadPoolExecutor
 
@@ -13,45 +13,47 @@ OPENAI_PREFIX = "openai://"
 API_URL_PREFIX = "https://"
 NUM_THREADS = os.cpu_count()
 
-_encoding = tiktoken.get_encoding("cl100k_base")
 
 
-def chunk(input: str, context_len: int) -> list[str]:
-    tokens = _encoding.encode(input)
-    num_chunks = math.ceil(len(tokens) / context_len)
-    chunk_size = math.ceil(len(tokens) / num_chunks)
-    return [
-        _encoding.decode(tokens[start : start + chunk_size])
-        for start in range(0, len(tokens), chunk_size)
-    ]
+# _encoding = tiktoken.get_encoding("cl100k_base")
 
 
-def combine_texts(
-    texts: list[str], batch_size: int, delimiter: str = "```"
-) -> list[str]:
-    if count_tokens(texts) > batch_size:
-        half = len(texts) // 2
-        return combine_texts(texts[:half], batch_size, delimiter) + combine_texts(
-            texts[half:], batch_size, delimiter
-        )
-    else:
-        return [delimiter.join(texts)]
+# def chunk(input: str, context_len: int) -> list[str]:
+#     tokens = _encoding.encode(input)
+#     num_chunks = math.ceil(len(tokens) / context_len)
+#     chunk_size = math.ceil(len(tokens) / num_chunks)
+#     return [
+#         _encoding.decode(tokens[start : start + chunk_size])
+#         for start in range(0, len(tokens), chunk_size)
+#     ]
 
 
-def chunk_tokens(input: str, context_len: int, encode_fn) -> list[str]:
-    tokens = encode_fn(input)
-    num_chunks = math.ceil(len(tokens) / context_len)
-    chunk_size = math.ceil(len(tokens) / num_chunks)
-    return [
-        tokens[start : start + chunk_size]
-        for start in range(0, len(tokens), chunk_size)
-    ]
+# def combine_texts(
+#     texts: list[str], batch_size: int, delimiter: str = "```"
+# ) -> list[str]:
+#     if count_tokens(texts) > batch_size:
+#         half = len(texts) // 2
+#         return combine_texts(texts[:half], batch_size, delimiter) + combine_texts(
+#             texts[half:], batch_size, delimiter
+#         )
+#     else:
+#         return [delimiter.join(texts)]
 
 
-truncate = lambda input, n_ctx: _encoding.decode(
-    _encoding.encode(input, allowed_special=_ALLOWED_SPECIAL_TOKENS)[:n_ctx]
-)
-count_tokens = lambda input: len(_encoding.encode(input))
+# def chunk_tokens(input: str, context_len: int, encode_fn) -> list[str]:
+#     tokens = encode_fn(input)
+#     num_chunks = math.ceil(len(tokens) / context_len)
+#     chunk_size = math.ceil(len(tokens) / num_chunks)
+#     return [
+#         tokens[start : start + chunk_size]
+#         for start in range(0, len(tokens), chunk_size)
+#     ]
+
+
+# truncate = lambda input, n_ctx: _encoding.decode(
+#     _encoding.encode(input, allowed_special=_ALLOWED_SPECIAL_TOKENS)[:n_ctx]
+# )
+# count_tokens = lambda input: len(_encoding.encode(input))
 
 _ALLOWED_SPECIAL_TOKENS = {
     "<|endoftext|>",
@@ -63,12 +65,12 @@ _ALLOWED_SPECIAL_TOKENS = {
 }
 
 
-def truncate_batch(input_texts: list[str], n_ctx):
-    tokenlist = _encoding.encode_batch(
-        input_texts, num_threads=os.cpu_count(), allowed_special=_ALLOWED_SPECIAL_TOKENS
-    )
-    tokenlist = [tokens[:n_ctx] for tokens in tokenlist]
-    return _encoding.decode_batch(tokenlist, num_threads=os.cpu_count())
+# def truncate_batch(input_texts: list[str], n_ctx):
+#     tokenlist = _encoding.encode_batch(
+#         input_texts, num_threads=os.cpu_count(), allowed_special=_ALLOWED_SPECIAL_TOKENS
+#     )
+#     tokenlist = [tokens[:n_ctx] for tokens in tokenlist]
+#     return _encoding.decode_batch(tokenlist, num_threads=os.cpu_count())
 
 
 def run_batch(func: Callable, items, num_threads: int = os.cpu_count()):
