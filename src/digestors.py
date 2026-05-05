@@ -12,6 +12,11 @@ from .models import *
 from .utils import *
 from icecream import ic
 
+log = logging.getLogger("digestor")
+
+try: import torch
+except: log.warning("PyTorch Not Available", extra={'source': __file__, 'num_items': 1})
+
 DEFAULT_SAMPLING_PARAMS = {
     "temperature": 0.2,
     "top_k": 50,
@@ -20,8 +25,6 @@ DEFAULT_SAMPLING_PARAMS = {
     "max_tokens": 2048
 }
 DEFAULT_CONTEXT_LEN = 32768
-
-log = logging.getLogger("digestor")
 
 _STRUCTURED_SYS_MSG = """RETURN=JSON object matching schema
     EXCLUDE=unspecified data, implied assessments, assumptions
@@ -118,26 +121,26 @@ class LocalTokenizer:
         if not self.tokenizer.pad_token:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    def tokenize_prompts(self, prompts: str | list[str]):
-        tokens = self.tokenizer(
+    def tokenize_prompts(self, prompts):
+        tokens = self.tokenizer.apply_chat_template(
             prompts,
             padding=True,
             truncation=True,
             max_length=self.context_len,
             return_tensors="pt",
+            add_generation_prompt=True,
         )
         if self.device:
             tokens = tokens.to(self.device)
         return tokens
 
     def decode(self, tokens, input_tokens = None):
-        if input_tokens:
+        if input_tokens is not None:
             tokens = tokens[len(input_tokens):]
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 
     def batch_decode(self, tokens, input_tokens = None):
-        if input_tokens:
-            # assuming they have the same length
+        if input_tokens is not None:
             tokens = [out_tokens[len(in_tokens):] for out_tokens, in_tokens in zip(tokens, input_tokens)]
         return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
 
@@ -151,6 +154,7 @@ class LocalTokenizer:
 
 
 # needs 1.3 for repetition penalty support, and max_new_tokens = 384
+# "no_repeat_ngram_size": 3,
 class TransformerDigestor(DigestorBase):
     _tokenizer = None
 
@@ -162,8 +166,6 @@ class TransformerDigestor(DigestorBase):
         response_mode: str = "json",
         **sampling_params,
     ):
-        import torch
-
         super().__init__(
             model_name=model_path,
             context_len=context_len,
@@ -175,20 +177,7 @@ class TransformerDigestor(DigestorBase):
         self.dtype = torch.bfloat16
         self._tokenizer = None
         self._sampling_params = {(k if k!= "max_tokens" else "max_new_tokens"): v for k, v in self.sampling_params.items()}
-        self._sampling_params.update({
-            'stop': ["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
-            'do_sample': True,
-            # "no_repeat_ngram_size": 3,
-        })
-        
-        if self.response_mode == "json":
-            ic(self._sampling_params).update({
-                'response_format': {
-                    "type": "json_object", 
-                    "json_schema": self.output_model.model_json_schema()
-                }
-            })
-
+                
     def __enter__(self):
         if not self._llm:
             from transformers import AutoModelForCausalLM
@@ -197,6 +186,18 @@ class TransformerDigestor(DigestorBase):
                 self.model_name, dtype=self.dtype, device_map=self.device
             ).to(self.device)
             self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
+
+            if self.response_mode == "json":
+                from lmformatenforcer import JsonSchemaParser
+                from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
+                
+                parser = JsonSchemaParser(self.output_model.model_json_schema())
+                self._sampling_params["prefix_allowed_tokens_fn"] = (
+                    build_transformers_prefix_allowed_tokens_fn(
+                        self._tokenizer.tokenizer, 
+                        parser
+                    )
+                )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -206,12 +207,10 @@ class TransformerDigestor(DigestorBase):
         return super().__exit__(exc_type, exc_val, exc_tb)
 
     def _run_batch(self, prompts, **kwargs):
-        import torch
-
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
-            input_tokens = self.tokenizer.tokenize_prompts(prompts)
-            output_tokens = self.model.generate(**input_tokens, **self._sampling_params)
-            generated_texts = self.tokenizer.batch_decode(output_tokens, input_tokens)
+            input_tokens = self._tokenizer.tokenize_prompts(prompts)
+            output_tokens = self._llm.generate(input_tokens, do_sample=True, **self._sampling_params)
+            generated_texts = self._tokenizer.batch_decode(output_tokens, input_tokens)
         return generated_texts
 
     def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
@@ -221,26 +220,13 @@ class TransformerDigestor(DigestorBase):
         generated_texts = self._run_batch(self._create_prompts(input_messages))
         return [self._parse_output(text) for text in generated_texts]
 
-
 class OVDigestor(TransformerDigestor):
     def __enter__(self):
         if not self._llm:
             from optimum.intel.openvino import OVModelForSeq2SeqLM
 
             self._llm = OVModelForSeq2SeqLM.from_pretrained(self.model_name)
-
-            self._tokenizer = LocalTokenizer(
-                self.model_name,
-                self.context_len,
-                self.max_new_tokens,
-                self.device,
-            )
-
-            self._sampling_params = {
-                **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
-                "max_new_tokens": self.max_output_tokens,
-            }
-
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
         return self
 
     def _run_batch(self, prompts):
@@ -252,7 +238,6 @@ class OVDigestor(TransformerDigestor):
 class ORTDigestor(TransformerDigestor):
     def __enter__(self):
         if not self._llm:
-            import torch
             from optimum.onnxruntime import ORTModelForCausalLM
 
             self._llm = ORTModelForCausalLM.from_pretrained(
@@ -277,11 +262,11 @@ class ORTDigestor(TransformerDigestor):
                 self.device,
             )
 
-            self._sampling_params = {
-                **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
-                "pad_token_id": self._tokenizer.pad_token_id,
-                "eos_token_id": self._tokenizer.eos_token_id,
-            }
+            # self._sampling_params = {
+            #     **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
+            #     "pad_token_id": self._tokenizer.pad_token_id,
+            #     "eos_token_id": self._tokenizer.eos_token_id,
+            # }
 
         return self
 
@@ -292,24 +277,24 @@ class ORTDigestor(TransformerDigestor):
 
 
 class VLLMDigestor(DigestorBase):
-    def _create_prompts(self, input_messages: list[str]):
-        prompt = lambda msg: [
-            {"role": "system", "content": _STRUCTURED_SYS_MSG},
-            {
-                "role": "user",
-                "content": _INST_MSG.format(
-                    fields=",".join(self.output_model.model_fields.keys()),
-                    text=msg[: self.context_len >> 1],
-                ),
-            },
-        ]
-        return [prompt(msg) for msg in input_messages]
+    # def _create_prompts(self, input_messages: list[str]):
+    #     prompt = lambda msg: [
+    #         {"role": "system", "content": _STRUCTURED_SYS_MSG},
+    #         {
+    #             "role": "user",
+    #             "content": _INST_MSG.format(
+    #                 fields=",".join(self.output_model.model_fields.keys()),
+    #                 text=msg[: self.context_len >> 1],
+    #             ),
+    #         },
+    #     ]
+    #     return [prompt(msg) for msg in input_messages]
 
-    def _parse_output(self, text: str):
-        try:
-            return self.output_model.model_validate_json(_strip_fences(text))
-        except Exception:
-            log.warning("failed parsing: %s", text, exc_info=True)
+    # def _parse_output(self, text: str):
+    #     try:
+    #         return self.output_model.model_validate_json(_strip_fences(text))
+    #     except Exception:
+    #         log.warning("failed parsing: %s", text, exc_info=True)
 
     def __enter__(self):
         if not self._llm:
