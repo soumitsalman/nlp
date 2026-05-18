@@ -12,15 +12,26 @@ from .models import *
 from .utils import *
 from icecream import ic
 
+log = logging.getLogger("digestor")
+
+try: import torch
+except: log.warning("PyTorch Not Available", extra={'source': __file__, 'num_items': 1})
+
 DEFAULT_SAMPLING_PARAMS = {
     "temperature": 0.2,
     "top_k": 50,
     "top_p": 1.0,
     "repetition_penalty": 1.15,
+    "max_tokens": 2048
 }
 DEFAULT_CONTEXT_LEN = 32768
 
-log = logging.getLogger("digestor")
+_STRUCTURED_SYS_MSG = """RETURN=JSON object matching schema
+    EXCLUDE=unspecified data, implied assessments, assumptions
+    REMOVE=N/A,null values, empty fields
+    AVOID=markdown, prose, code fences, null placeholders, implied information, assumptions"""
+
+_INST_MSG = """DETERMINE {fields} FROM content IF specified\n=== content ===\n{text}"""
 
 
 class DigestorBase(ABC):
@@ -57,7 +68,17 @@ class DigestorBase(ABC):
         return False
 
     def _create_prompts(self, input_messages: list[str]):
-        return input_messages
+        prompt = lambda msg: [
+            {"role": "system", "content": _STRUCTURED_SYS_MSG},
+            {
+                "role": "user",
+                "content": _INST_MSG.format(
+                    fields=",".join(self.output_model.model_fields.keys()),
+                    text=msg[: self.context_len >> 1],
+                ),
+            },
+        ]
+        return [prompt(msg) for msg in input_messages]
 
     def _parse_output(self, response: str):
         response = _strip_fences(response)
@@ -81,15 +102,13 @@ class DigestorBase(ABC):
 
 class LocalTokenizer:
     tokenizer = None
-    max_input_tokens = None
-    max_new_tokens = None
+    context_len = None
     device = None
 
     def __init__(
         self,
         model_id,
         context_len: int,
-        max_new_tokens: int = None,
         device: str = None,
     ):
         from transformers import AutoTokenizer
@@ -97,28 +116,32 @@ class LocalTokenizer:
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_id, max_length=context_len, use_fast=True
         )
-        self.max_input_tokens = context_len
-        self.max_new_tokens = max_new_tokens
+        self.context_len = context_len
         self.device = device
         if not self.tokenizer.pad_token:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    def tokenize_prompts(self, prompts: str | list[str]):
-        tokens = self.tokenizer(
+    def tokenize_prompts(self, prompts):
+        tokens = self.tokenizer.apply_chat_template(
             prompts,
-            padding="max_length",
+            padding=True,
             truncation=True,
-            max_length=self.max_input_tokens,
+            max_length=self.context_len,
             return_tensors="pt",
+            add_generation_prompt=True,
         )
         if self.device:
             tokens = tokens.to(self.device)
         return tokens
 
-    def decode(self, tokens):
+    def decode(self, tokens, input_tokens = None):
+        if input_tokens is not None:
+            tokens = tokens[len(input_tokens):]
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 
-    def batch_decode(self, tokens):
+    def batch_decode(self, tokens, input_tokens = None):
+        if input_tokens is not None:
+            tokens = [out_tokens[len(in_tokens):] for out_tokens, in_tokens in zip(tokens, input_tokens)]
         return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
 
     @property
@@ -131,11 +154,9 @@ class LocalTokenizer:
 
 
 # needs 1.3 for repetition penalty support, and max_new_tokens = 384
+# "no_repeat_ngram_size": 3,
 class TransformerDigestor(DigestorBase):
-    device: str = None
-    max_output_tokens: int = 0
     _tokenizer = None
-    _model = None
 
     def __init__(
         self,
@@ -145,8 +166,6 @@ class TransformerDigestor(DigestorBase):
         response_mode: str = "json",
         **sampling_params,
     ):
-        import torch
-
         super().__init__(
             model_name=model_path,
             context_len=context_len,
@@ -156,28 +175,29 @@ class TransformerDigestor(DigestorBase):
         )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.bfloat16
-        self.max_new_tokens = sampling_params.get("max_new_tokens", None)
         self._tokenizer = None
-
+        self._sampling_params = {(k if k!= "max_tokens" else "max_new_tokens"): v for k, v in self.sampling_params.items()}
+                
     def __enter__(self):
         if not self._llm:
-            from transformers import AutoModelForSeq2SeqLM
+            from transformers import AutoModelForCausalLM
 
-            self._llm = AutoModelForSeq2SeqLM.from_pretrained(
+            self._llm = AutoModelForCausalLM.from_pretrained(
                 self.model_name, dtype=self.dtype, device_map=self.device
             ).to(self.device)
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
 
-            self._sampling_params = {
-                **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
-                "no_repeat_ngram_size": 3,
-            }
-
-            self._tokenizer = LocalTokenizer(
-                self.model_name,
-                self.context_len,
-                self.max_new_tokens,
-                self.device,
-            )
+            if self.response_mode == "json":
+                from lmformatenforcer import JsonSchemaParser
+                from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
+                
+                parser = JsonSchemaParser(self.output_model.model_json_schema())
+                self._sampling_params["prefix_allowed_tokens_fn"] = (
+                    build_transformers_prefix_allowed_tokens_fn(
+                        self._tokenizer.tokenizer, 
+                        parser
+                    )
+                )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -187,12 +207,10 @@ class TransformerDigestor(DigestorBase):
         return super().__exit__(exc_type, exc_val, exc_tb)
 
     def _run_batch(self, prompts, **kwargs):
-        import torch
-
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
-            input_tokens = self.tokenizer.tokenize_prompts(prompts)
-            output_tokens = self.model.generate(**input_tokens, **self._sampling_params)
-            generated_texts = self.tokenizer.batch_decode(output_tokens)
+            input_tokens = self._tokenizer.tokenize_prompts(prompts)
+            output_tokens = self._llm.generate(input_tokens, do_sample=True, **self._sampling_params)
+            generated_texts = self._tokenizer.batch_decode(output_tokens, input_tokens)
         return generated_texts
 
     def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
@@ -202,26 +220,13 @@ class TransformerDigestor(DigestorBase):
         generated_texts = self._run_batch(self._create_prompts(input_messages))
         return [self._parse_output(text) for text in generated_texts]
 
-
 class OVDigestor(TransformerDigestor):
     def __enter__(self):
         if not self._llm:
             from optimum.intel.openvino import OVModelForSeq2SeqLM
 
             self._llm = OVModelForSeq2SeqLM.from_pretrained(self.model_name)
-
-            self._tokenizer = LocalTokenizer(
-                self.model_name,
-                self.context_len,
-                self.max_new_tokens,
-                self.device,
-            )
-
-            self._sampling_params = {
-                **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
-                "max_new_tokens": self.max_output_tokens,
-            }
-
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
         return self
 
     def _run_batch(self, prompts):
@@ -233,7 +238,6 @@ class OVDigestor(TransformerDigestor):
 class ORTDigestor(TransformerDigestor):
     def __enter__(self):
         if not self._llm:
-            import torch
             from optimum.onnxruntime import ORTModelForCausalLM
 
             self._llm = ORTModelForCausalLM.from_pretrained(
@@ -250,7 +254,6 @@ class ORTDigestor(TransformerDigestor):
                 if torch.cuda.is_available()
                 else "CPUExecutionProvider",
             )
-
             self._tokenizer = LocalTokenizer(
                 self.model_name,
                 self.context_len,
@@ -258,11 +261,11 @@ class ORTDigestor(TransformerDigestor):
                 self.device,
             )
 
-            self._sampling_params = {
-                **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
-                "pad_token_id": self._tokenizer.pad_token_id,
-                "eos_token_id": self._tokenizer.eos_token_id,
-            }
+            # self._sampling_params = {
+            #     **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
+            #     "pad_token_id": self._tokenizer.pad_token_id,
+            #     "eos_token_id": self._tokenizer.eos_token_id,
+            # }
 
         return self
 
@@ -272,116 +275,7 @@ class ORTDigestor(TransformerDigestor):
         return self._tokenizer.batch_decode(output_tokens)
 
 
-class NamedEntityExtractor(DigestorBase):
-    model_path: str
-    confidence = 0.5
-    _LABELS = [
-        "person",
-        "people",
-        "organization",
-        "company",
-        "institution",
-        "business",
-        "city",
-        "state",
-        "country",
-        "location",
-        "stock",
-        "ticker",
-        "stockticker",
-        "product",
-    ]
-    _LABEL_FIELD_MAPPINGS = {
-        "person": "people",
-        "people": "people",
-        "organization": "companies",
-        "company": "companies",
-        "institution": "companies",
-        "business": "companies",
-        "city": "regions",
-        "state": "regions",
-        "country": "regions",
-        "location": "regions",
-        "stock": "stock_tickers",
-        "ticker": "stock_tickers",
-        "stockticker": "stock_tickers",
-        "product": "products",
-    }
-
-    def __init__(self, model_path: str, context_len: int = 4096, threshold=0.5) -> None:
-        super().__init__(model_name=model_path, context_len=context_len)
-        self.threshold = threshold
-        self._label_embeddings = None
-
-    def __enter__(self):
-        if not self._llm:
-            import torch
-            from gliner import GLiNER
-
-            # config.fx_graph_cache = True
-            self._llm = GLiNER.from_pretrained(
-                self.model_name,
-                max_length=self.context_len,
-                map_location="cuda" if torch.cuda.is_available() else "cpu",
-            )
-            self._label_embeddings = self._llm.encode_labels(
-                self._LABELS, batch_size=len(self._LABELS)
-            )
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._label_embeddings is not None:
-            del self._label_embeddings
-            self._label_embeddings = None
-        return super().__exit__(exc_type, exc_val, exc_tb)
-
-    def _parse_output(self, response):
-        res = defaultdict(list)
-        for ent in response:
-            res[self._LABEL_FIELD_MAPPINGS[ent["label"]]].append(ent["text"])
-        for k, v in res.items():
-            res[k] = list({item.lower(): item for item in v}.values())
-        return Digest(**res)
-
-    def run_batch(self, input_messages: list[str]):
-        entities = self._llm.batch_predict_with_embeds(
-            input_messages,
-            labels_embeddings=self._label_embeddings,
-            labels=self._LABELS,
-            threshold=self.threshold,
-        )
-        return [self._parse_output(group) if group else None for group in entities]
-
-
 class VLLMDigestor(DigestorBase):
-    _STRUCTURED_SYS_MSG = """RETURN=JSON object matching schema
-    EXCLUDE=unspecified data, implied assessments, assumptions
-    REMOVE=N/A,null values, empty fields
-    AVOID=markdown, prose, code fences, null placeholders, implied information, assumptions"""
-
-    _INST_MSG = (
-        """DETERMINE {fields} FROM content IF specified\n=== content ===\n{text}"""
-    )
-
-    def _create_prompts(self, input_messages: list[str]):
-        prompt = lambda msg: [
-            {"role": "system", "content": self._STRUCTURED_SYS_MSG},
-            {
-                "role": "user",
-                "content": self._INST_MSG.format(
-                    fields=",".join(self.output_model.model_fields.keys()),
-                    text=msg[: self.context_len >> 1],
-                ),
-            },
-        ]
-        return [prompt(msg) for msg in input_messages]
-
-    def _parse_output(self, text: str):
-        try:
-            return self.output_model.model_validate_json(_strip_fences(text))
-        except Exception:
-            log.warning("failed parsing: %s", text, exc_info=True)
-
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
@@ -390,7 +284,6 @@ class VLLMDigestor(DigestorBase):
             self._llm = LLM(model=self.model_name)
             self._sampling_params = SamplingParams(
                 **self.sampling_params,
-                max_tokens=2048,
                 stop=["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
                 structured_outputs=StructuredOutputsParams(
                     json=self.output_model.model_json_schema()
@@ -488,9 +381,6 @@ class VLLMDigestorToolCall(VLLMDigestor):
 
 
 class OpenAIDigestor(DigestorBase):
-    _STRUCTURED_SYS_MSG = VLLMDigestor._STRUCTURED_SYS_MSG
-    _INST_MSG = VLLMDigestor._INST_MSG
-
     def __init__(
         self,
         model_name: str,
@@ -519,20 +409,7 @@ class OpenAIDigestor(DigestorBase):
                 api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3
             )
         return self
-
-    def _create_prompts(self, input_messages: list[str]):
-        prompt = lambda msg: [
-            {"role": "system", "content": self._STRUCTURED_SYS_MSG},
-            {
-                "role": "user",
-                "content": self._INST_MSG.format(
-                    fields=",".join(self.output_model.model_fields.keys()),
-                    text=msg[: self.context_len >> 1],
-                ),
-            },
-        ]
-        return [prompt(msg) for msg in input_messages]
-
+        
     def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
         from openai import APIError
 
@@ -567,6 +444,140 @@ class OpenAIDigestor(DigestorBase):
                 results[idx] = result
 
         return results
+
+
+class NamedEntityExtractor(DigestorBase):
+    model_path: str
+    confidence = 0.5
+    _splitter = None
+
+    _LABELS = [
+        "person",
+        "people",
+        "organization",
+        "company",
+        "institution",
+        "business",
+        "city",
+        "state",
+        "country",
+        "location",
+        "stock",
+        "ticker",
+        "stockticker",
+        "product",
+    ]
+    _LABEL_FIELD_MAPPINGS = {
+        "person": "people",
+        "people": "people",
+        "organization": "companies",
+        "company": "companies",
+        "institution": "companies",
+        "business": "companies",
+        "city": "regions",
+        "state": "regions",
+        "country": "regions",
+        "location": "regions",
+        "stock": "stock_tickers",
+        "ticker": "stock_tickers",
+        "stockticker": "stock_tickers",
+        "product": "products",
+    }   
+    _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 4))
+    _TOKEN_MARGIN = 32
+    _MIN_SIZE = 100
+
+    def __init__(self, model_path: str, context_len: int = 4096, threshold=0.5) -> None:
+        super().__init__(model_name=model_path, context_len=context_len)
+        self.threshold = threshold
+        self._label_embeddings = None        
+    
+    def __enter__(self):
+        if not self._llm:
+            import torch
+            from gliner import GLiNER
+            from llama_index.core.text_splitter import TokenTextSplitter
+
+            # config.fx_graph_cache = True
+            self._llm = GLiNER.from_pretrained(
+                self.model_name,
+                max_length=self.context_len,
+                map_location="cuda" if torch.cuda.is_available() else "cpu",
+            )
+            self._label_embeddings = self._llm.encode_labels(
+                self._LABELS, batch_size=len(self._LABELS)
+            )
+            self._splitter = TokenTextSplitter(
+                chunk_size=self.context_len - self._TOKEN_MARGIN,
+                chunk_overlap=0,
+                include_metadata=False,
+                include_prev_next_rel=False,
+            )
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._label_embeddings is not None:
+            del self._label_embeddings
+            self._label_embeddings = None
+            del self._splitter
+            self._splitter = None
+        return super().__exit__(exc_type, exc_val, exc_tb)
+
+    def _create_prompts(self, input_messages: list[str]):
+        return input_messages
+
+    def _parse_output(self, response):
+        res = defaultdict(list)
+        for ent in response:
+            res[self._LABEL_FIELD_MAPPINGS[ent["label"]]].append(ent["text"])
+        for k, v in res.items():
+            res[k] = list({item.lower(): item for item in v}.values())
+        return Digest(**res)
+
+    def _split(self, text: str):
+        chunks = self._splitter.split_text(text)[:self._MAX_CHUNKS]
+        if len(chunks) > 1 and len(chunks[-1]) < self._MIN_SIZE: chunks = chunks[:-1]
+        return chunks
+
+    def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
+        texts = texts if isinstance(texts, list) else [texts]
+        
+        chunks = list(map(self._split, texts))
+        counts = list(map(len, chunks))
+        start_idx = [0]*len(chunks)
+        for i in range(1,len(counts)):
+            start_idx[i] = start_idx[i-1]+counts[i-1]
+        return list(chain(*chunks)), start_idx, counts
+
+    def _merge_chunks(self, digests: list[Digest]):
+        to_merge = [digest for digest in digests if digest]
+        if not to_merge: return
+
+        people, companies, regions, stock_tickers, products = set(), set(), set(), set(), set()
+        for digest in to_merge:
+            if digest.regions: regions.update(digest.regions)
+            if digest.people: people.update(digest.people)
+            if digest.products: products.update(digest.products)
+            if digest.companies: companies.update(digest.companies)
+            if digest.stock_tickers: stock_tickers.update(digest.stock_tickers)
+        return Digest(
+            people=list(people), 
+            companies=list(companies), 
+            regions=list(regions), 
+            stock_tickers=list(stock_tickers), 
+            products=list(products)
+        )
+
+    def run_batch(self, input_messages: list[str]):
+        chunks, start_idx, counts = self._create_chunks(input_messages)
+        entities = self._llm.batch_predict_with_embeds(
+            chunks,
+            labels_embeddings=self._label_embeddings,
+            labels=self._LABELS,
+            threshold=self.threshold,
+        )
+        digests = [self._parse_output(group) if group else None for group in entities]        
+        return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
 
 
 def from_path(model_path: str, context_len: int = None, **kwargs) -> DigestorBase:
@@ -620,12 +631,12 @@ def _strip_fences(text: str) -> str:
     )
 
 
-def _safe_model_dump(item: Optional[Digest]):
-    if item is None:
-        return None
-    return item.model_dump(
-        mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True
-    )
+# def _safe_model_dump(item: Optional[Digest]):
+#     if item is None:
+#         return None
+#     return item.model_dump(
+#         mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True
+#     )
 
 
 M_GIST = "# GIST"

@@ -7,20 +7,20 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
 from retry import retry
 from .utils import *
+from icecream import ic
 
 logger = logging.getLogger(__name__)
 
-_MAX_CHUNKS = 9
-_SPECIAL_TOKEN_MARGIN = 8  # BOS/EOS/CLS/SEP overhead; chunk_size = context_len - this
-_OVERLAP_MARGIN = 20  # to ensure that we don't lose important context when merging chunk embeddings
 VECTOR = list[float]
-
-_too_short = lambda chunk: len(chunk) < (_OVERLAP_MARGIN<<2)
 
 class EmbedderBase(ABC):
     splitter = None
     context_len: int = None
     tokenizer_fn = None
+
+    _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 4))
+    _SPECIAL_TOKEN_MARGIN = 8  # BOS/EOS/CLS/SEP overhead; chunk_size = context_len - this
+    _OVERLAP_MARGIN = 20  # to ensure that we don't lose important context when merging chunk embeddings
 
     def __init__(self, context_len: int, tokenizer_fn=None):
         self.context_len = context_len
@@ -31,14 +31,14 @@ class EmbedderBase(ABC):
         from llama_index.core.text_splitter import TokenTextSplitter
         if not self.splitter:
             self.splitter = TokenTextSplitter(
-                chunk_size=self.context_len - _SPECIAL_TOKEN_MARGIN,
-                chunk_overlap=_OVERLAP_MARGIN,
+                chunk_size=self.context_len - self._SPECIAL_TOKEN_MARGIN,
+                chunk_overlap=self._OVERLAP_MARGIN,
                 tokenizer=self.tokenizer_fn,
                 include_metadata=False,
                 include_prev_next_rel=False,
             )
-        chunks = self.splitter.split_text(text)[:_MAX_CHUNKS]
-        if len(chunks) > 1 and _too_short(chunks[-1]): chunks = chunks[:-1]
+        chunks = self.splitter.split_text(text)[:self._MAX_CHUNKS]
+        if len(chunks) > 1 and len(chunks[-1]) < (self._OVERLAP_MARGIN<<2): chunks = chunks[:-1]
         return chunks
 
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
