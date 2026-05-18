@@ -90,9 +90,17 @@ class Digest(BaseModel):
                 del definition['anyOf']
         return schema
 
+    def model_dump(self, **kwargs):
+        defaults = {
+            "exclude_none": True,
+            "exclude_unset": True,
+            "exclude_defaults": True,
+        }
+        kwargs = {**defaults, **kwargs}
+        return super().model_dump(**kwargs)
 
     def __str__(self):
-        return text_value(self, field_delim="\n")
+        return text_value(self, field_delim="\n")        
 
     @property
     def gist(self):
@@ -574,10 +582,6 @@ def valid_stock_tickers(items: list[str]):
 _IMPACT_LEVELS = {"low", "medium", "high", "critical", "transformative"}
 def valid_impact_or_risk(val: Optional[str]):
     if val and val.lower() in _IMPACT_LEVELS: return val.lower()
-
-def valid_tags(items: str|list[str]):
-    """Converts the tags into snake_case"""
-    return list(map(textcase.snake, cleanup_names(items)))
 
 def valid_tags(items: str|list[str]):
     """Converts the tags into snake_case"""

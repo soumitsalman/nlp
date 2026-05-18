@@ -254,7 +254,6 @@ class ORTDigestor(TransformerDigestor):
                 if torch.cuda.is_available()
                 else "CPUExecutionProvider",
             )
-
             self._tokenizer = LocalTokenizer(
                 self.model_name,
                 self.context_len,
@@ -277,25 +276,6 @@ class ORTDigestor(TransformerDigestor):
 
 
 class VLLMDigestor(DigestorBase):
-    # def _create_prompts(self, input_messages: list[str]):
-    #     prompt = lambda msg: [
-    #         {"role": "system", "content": _STRUCTURED_SYS_MSG},
-    #         {
-    #             "role": "user",
-    #             "content": _INST_MSG.format(
-    #                 fields=",".join(self.output_model.model_fields.keys()),
-    #                 text=msg[: self.context_len >> 1],
-    #             ),
-    #         },
-    #     ]
-    #     return [prompt(msg) for msg in input_messages]
-
-    # def _parse_output(self, text: str):
-    #     try:
-    #         return self.output_model.model_validate_json(_strip_fences(text))
-    #     except Exception:
-    #         log.warning("failed parsing: %s", text, exc_info=True)
-
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
@@ -429,9 +409,7 @@ class OpenAIDigestor(DigestorBase):
                 api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3
             )
         return self
-
-   
-
+        
     def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
         from openai import APIError
 
@@ -471,6 +449,8 @@ class OpenAIDigestor(DigestorBase):
 class NamedEntityExtractor(DigestorBase):
     model_path: str
     confidence = 0.5
+    _splitter = None
+
     _LABELS = [
         "person",
         "people",
@@ -502,17 +482,21 @@ class NamedEntityExtractor(DigestorBase):
         "ticker": "stock_tickers",
         "stockticker": "stock_tickers",
         "product": "products",
-    }
+    }   
+    _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 4))
+    _TOKEN_MARGIN = 32
+    _MIN_SIZE = 100
 
     def __init__(self, model_path: str, context_len: int = 4096, threshold=0.5) -> None:
         super().__init__(model_name=model_path, context_len=context_len)
         self.threshold = threshold
-        self._label_embeddings = None
-
+        self._label_embeddings = None        
+    
     def __enter__(self):
         if not self._llm:
             import torch
             from gliner import GLiNER
+            from llama_index.core.text_splitter import TokenTextSplitter
 
             # config.fx_graph_cache = True
             self._llm = GLiNER.from_pretrained(
@@ -523,12 +507,20 @@ class NamedEntityExtractor(DigestorBase):
             self._label_embeddings = self._llm.encode_labels(
                 self._LABELS, batch_size=len(self._LABELS)
             )
+            self._splitter = TokenTextSplitter(
+                chunk_size=self.context_len - self._TOKEN_MARGIN,
+                chunk_overlap=0,
+                include_metadata=False,
+                include_prev_next_rel=False,
+            )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._label_embeddings is not None:
             del self._label_embeddings
             self._label_embeddings = None
+            del self._splitter
+            self._splitter = None
         return super().__exit__(exc_type, exc_val, exc_tb)
 
     def _create_prompts(self, input_messages: list[str]):
@@ -542,14 +534,50 @@ class NamedEntityExtractor(DigestorBase):
             res[k] = list({item.lower(): item for item in v}.values())
         return Digest(**res)
 
+    def _split(self, text: str):
+        chunks = self._splitter.split_text(text)[:self._MAX_CHUNKS]
+        if len(chunks) > 1 and len(chunks[-1]) < self._MIN_SIZE: chunks = chunks[:-1]
+        return chunks
+
+    def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
+        texts = texts if isinstance(texts, list) else [texts]
+        
+        chunks = list(map(self._split, texts))
+        counts = list(map(len, chunks))
+        start_idx = [0]*len(chunks)
+        for i in range(1,len(counts)):
+            start_idx[i] = start_idx[i-1]+counts[i-1]
+        return list(chain(*chunks)), start_idx, counts
+
+    def _merge_chunks(self, digests: list[Digest]):
+        to_merge = [digest for digest in digests if digest]
+        if not to_merge: return
+
+        people, companies, regions, stock_tickers, products = set(), set(), set(), set(), set()
+        for digest in to_merge:
+            if digest.regions: regions.update(digest.regions)
+            if digest.people: people.update(digest.people)
+            if digest.products: products.update(digest.products)
+            if digest.companies: companies.update(digest.companies)
+            if digest.stock_tickers: stock_tickers.update(digest.stock_tickers)
+        return Digest(
+            people=list(people), 
+            companies=list(companies), 
+            regions=list(regions), 
+            stock_tickers=list(stock_tickers), 
+            products=list(products)
+        )
+
     def run_batch(self, input_messages: list[str]):
+        chunks, start_idx, counts = self._create_chunks(input_messages)
         entities = self._llm.batch_predict_with_embeds(
-            input_messages,
+            chunks,
             labels_embeddings=self._label_embeddings,
             labels=self._LABELS,
             threshold=self.threshold,
         )
-        return [self._parse_output(group) if group else None for group in entities]
+        digests = [self._parse_output(group) if group else None for group in entities]        
+        return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
 
 
 def from_path(model_path: str, context_len: int = None, **kwargs) -> DigestorBase:
@@ -603,12 +631,12 @@ def _strip_fences(text: str) -> str:
     )
 
 
-def _safe_model_dump(item: Optional[Digest]):
-    if item is None:
-        return None
-    return item.model_dump(
-        mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True
-    )
+# def _safe_model_dump(item: Optional[Digest]):
+#     if item is None:
+#         return None
+#     return item.model_dump(
+#         mode="json", exclude_none=True, exclude_unset=True, exclude_defaults=True
+#     )
 
 
 M_GIST = "# GIST"
