@@ -9,9 +9,22 @@ from retry import retry
 from .utils import *
 from icecream import ic
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
+
+try: import torch
+except: log.warning("PyTorch Not Available", extra={'source': __file__, 'num_items': 1})
 
 VECTOR = list[float]
+
+is_cuda_usable = lambda: torch.cuda.is_available()
+
+# def is_cuda_usable() -> bool:
+#     if not torch.cuda.is_available():
+#         return False
+#     try:
+#         return torch.cuda.get_device_capability()[0] >= 7
+#     except Exception:
+#         return False
 
 class EmbedderBase(ABC):
     splitter = None
@@ -103,7 +116,7 @@ class RemoteEmbeddings(EmbedderBase):
         self.model_name = model_name
         self.context_len = context_len    
        
-    @retry(tries=2, delay=5, logger=logger)
+    @retry(tries=2, delay=5, logger=log)
     def _embed(self, texts):
         embeddings = self.model_client.embeddings.create(model=self.model_name, input=texts, encoding_format="float")
         return [data.embedding for data in embeddings.data]    
@@ -146,7 +159,6 @@ class TransformerEmbeddings(EmbedderBase):
     tokenizer_kwargs = None
 
     def __init__(self, model_path: str, context_len: int):
-        import torch
         from transformers import AutoTokenizer
 
         super().__init__(context_len, tokenizer_fn=AutoTokenizer.from_pretrained(model_path, truncation=False, use_fast=True).encode)
@@ -156,11 +168,10 @@ class TransformerEmbeddings(EmbedderBase):
             "max_length": context_len,
             "padding": True
         }
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if is_cuda_usable() else "cpu"
         self._model = None
 
     def _embed(self, texts: str|list[str]):
-        import torch
         with torch.inference_mode(), torch.no_grad():
             embs = self._model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs    
@@ -168,7 +179,7 @@ class TransformerEmbeddings(EmbedderBase):
     def __enter__(self):
         if not self._model:         
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device)
+            self._model = SentenceTransformer(self.model_path, processor_kwargs=self.tokenizer_kwargs, device=self.device, dtype=torch.bfloat16)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -191,7 +202,6 @@ class OVEmbeddings(EmbedderBase):
         self.context_len = context_len
 
     def _embed(self, texts: str|list[str]):
-        import torch
         with torch.no_grad(), torch.inference_mode():
             embs = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
@@ -211,7 +221,6 @@ class OVEmbeddings(EmbedderBase):
     
 class ORTEmbeddings(EmbedderBase):
     def __init__(self, model_path: str, context_len: int):
-        import torch
         from transformers import AutoTokenizer
 
         super().__init__(context_len, tokenizer_fn=AutoTokenizer.from_pretrained(model_path, truncation=False, use_fast=True).encode)
@@ -221,11 +230,10 @@ class ORTEmbeddings(EmbedderBase):
             "max_length": context_len,
             "padding": True
         }
-        self.device = "CUDAExecutionProvider" if torch.cuda.is_available() else "CPUExecutionProvider"
+        self.device = "CUDAExecutionProvider" if is_cuda_usable() else "CPUExecutionProvider"
         self._model = None
 
     def _embed(self, texts: str|list[str]):
-        import torch
         with torch.inference_mode(), torch.no_grad():
             embs = self._model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs
@@ -274,6 +282,59 @@ class VLLMEmbedder(EmbedderBase):
         return False
 
 
+class InfinityEmbeddings(EmbedderBase):
+    _engine = None
+    model_path = None
+    _model_name = None
+
+    def __init__(self, model_path: str, context_len: int):
+        from transformers import AutoTokenizer
+
+        super().__init__(
+            context_len,
+            tokenizer_fn=AutoTokenizer.from_pretrained(
+                model_path, truncation=False, use_fast=True
+            ).encode,
+        )
+        self.model_path = model_path
+        self.engine = "torch" if ic(is_cuda_usable()) else "optimum"
+        self.device = "cuda" if is_cuda_usable() else "cpu"
+        self.batch_size = int(os.getenv("INFINITY_BATCH_SIZE", 32))
+
+    def _embed(self, texts: str | list[str]):
+        single = isinstance(texts, str)
+        if single:
+            texts = [texts]
+        embeddings, _usage = self._engine.embed(model=self._model_name, sentences=texts).result()
+        arr = np.asarray(embeddings, dtype=np.float32)
+        return arr[0] if single else arr
+
+    def __enter__(self):
+        if not self._engine:
+            from infinity_emb import EngineArgs, SyncEngineArray
+
+            engine_args = EngineArgs(
+                model_name_or_path=self.model_path,
+                engine=self.engine,
+                device=self.device,
+                embedding_dtype="float32",
+                dtype=torch.bfloat16 if self.device == "cuda" else "auto",
+                batch_size=self.batch_size,
+                model_warmup=True,
+                bettertransformer=False,
+            )
+            self._model_name = engine_args.served_model_name
+            self._engine = SyncEngineArray.from_args([engine_args])
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._engine:
+            self._engine.stop()
+            self._engine = None
+        clear_gpu_cache()
+        return False
+
+
 def from_path(
     model_path: str, 
     context_len: int = 512,
@@ -286,6 +347,7 @@ def from_path(
     if model_path.startswith(OPENVINO_PREFIX): return OVEmbeddings(model_path.removeprefix(OPENVINO_PREFIX), context_len)
     if model_path.startswith(ONNX_PREFIX): return ORTEmbeddings(model_path.removeprefix(ONNX_PREFIX), context_len)
     if model_path.startswith(VLLM_PREFIX): return VLLMEmbedder(model_path.removeprefix(VLLM_PREFIX), context_len)
+    if model_path.startswith(INFINITY_PREFIX): return InfinityEmbeddings(model_path.removeprefix(INFINITY_PREFIX), context_len)
     return TransformerEmbeddings(model_path, context_len)
 
     

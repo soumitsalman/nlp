@@ -82,6 +82,7 @@ The `from_path(...)` factories automatically select a backend based on the model
 | `onnx://` | ONNX Runtime | Optimized inference on CPU/GPU with ONNX models |
 | `openvino://` | OpenVINO | Intel-optimized models for CPU inference |
 | `llamacpp://` | llama.cpp | Quantized models for lightweight local inference |
+| `infinity://` | Infinity in-process (`SyncEngineArray`) | High-throughput local embeddings via `infinity_emb` |
 | `https://` | OpenAI-compatible API | Remote API endpoints (e.g., OpenAI, custom servers) |
 
 Examples:
@@ -98,6 +99,9 @@ embedder = embedders.from_path("openvino://./model_ir.xml", context_len=512)
 
 # llama.cpp backend
 embedder = embedders.from_path("llamacpp://./model.gguf", context_len=512)
+
+# Infinity in-process backend
+embedder = embedders.from_path("infinity://BAAI/bge-small-en-v1.5", context_len=512)
 
 # OpenAI-compatible remote API
 embedder = embedders.from_path(

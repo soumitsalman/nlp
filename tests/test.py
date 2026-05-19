@@ -43,25 +43,16 @@ def save_image(tags, image_data):
     return os.path.abspath(filename)
 
 def test_embedder():
-    from src.embedders import TransformerEmbeddings, OVEmbeddings, ORTEmbeddings
+    from src.embedders import TransformerEmbeddings, InfinityEmbeddings
     
     data = load_json("./tests/texts-for-nlp.json")
     input_texts = [d['content'] for d in data]   
 
-    # xfemb = TransformerEmbeddings("/home/soumitsr/codes/pycoffeemaker/.models/models--avsolatorio--GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
-    
-    # ortemb = ORTEmbeddings("/home/soumitsr/codes/nlp/models/gist-small-embedding-v0-onnx", EMBEDDER_CONTEXT_LEN)
-    
-    # start = datetime.now()  
-    # vecs = xfemb(input_texts)
-    # # ic([(vec[:2]+vec[-1:]) for vec in vecs])
-    # ic(datetime.now() - start)    
-    # embedder = OVEmbeddings("/home/soumitsr/codes/pycoffeemaker/.models/gist-small-embedding-v0-q8-openvino", EMBEDDER_CONTEXT_LEN)
-    embedder = TransformerEmbeddings("avsolatorio/GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
-    batch_size = 48
-    with tqdm(total=len(input_texts), desc="Progress", unit="bean") as pbar:
+    embedder = InfinityEmbeddings("avsolatorio/GIST-small-Embedding-v0", EMBEDDER_CONTEXT_LEN)  
+    batch_size = 32
+    with embedder, tqdm(total=len(input_texts), desc="Progress", unit="bean") as pbar:
         for i in range(0, len(input_texts), batch_size):
-            vecs = embedder(input_texts[i:i+batch_size])
+            vecs = embedder.embed_documents(input_texts[i:i+batch_size])
             ic([(vec[:2]+vec[-1:]) for vec in random.sample(vecs, 2)])
             pbar.update(len(input_texts[i:i+batch_size]))
     
@@ -350,11 +341,11 @@ def test_local_image_generator():
 
 if __name__ == "__main__":
     # test_article_parser()
-    # test_embedder()
+    test_embedder()
     # test_digestor()
     # test_digestor_perf()
     # test_digest_parser()
     # test_image_generator()
     # test_local_image_generator()
-    test_extractor()
+    # test_extractor()
    

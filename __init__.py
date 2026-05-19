@@ -1,7 +1,7 @@
 __all__ = [
     'models', 'embedders', 'digestors',
     'Digest', 'EmbedderBase', 'DigestorBase',
-    'RemoteEmbeddings', 'TransformerEmbeddings', 'OVEmbeddings', 'ORTEmbeddings', 'LlamaCppEmbeddings', 'VLLMEmbeddings',
+    'RemoteEmbeddings', 'TransformerEmbeddings', 'OVEmbeddings', 'ORTEmbeddings', 'LlamaCppEmbeddings', 'VLLMEmbeddings', 'InfinityEmbeddings',
     'TransformerDigestor', 'OVDigestor', 'ORTDigestor', 'VLLMDigestor', 'OpenAIDigestor',
 ]
 

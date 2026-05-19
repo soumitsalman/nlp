@@ -1,5 +1,6 @@
 transformers
 sentence-transformers
+infinity-emb[all]
 accelerate
 optimum
 openvino
