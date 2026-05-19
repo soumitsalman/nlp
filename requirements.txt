@@ -1,13 +1,8 @@
 transformers
 sentence-transformers
-infinity-emb[all]
+infinity-emb[torch]
 accelerate
-optimum
-openvino
 onnxruntime
-optimum[intel]
-optimum[onnxruntime]
-optimum[openvino]
 gliner
 diffusers
 vllm

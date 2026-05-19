@@ -209,8 +209,10 @@ class OVEmbeddings(EmbedderBase):
     @property
     def model(self):
         if not self._model:
-            from optimum.intel.openvino import OVSentenceTransformer
-            self._model = OVSentenceTransformer.from_pretrained(self.model_path, compile={"num_threads": os.cpu_count()-1})
+            raise ImportError(
+                "openvino:// embedders require optimum-intel (removed). "
+                "Use infinity:// for local embeddings instead."
+            )
         return self._model
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -297,7 +299,7 @@ class InfinityEmbeddings(EmbedderBase):
             ).encode,
         )
         self.model_path = model_path
-        self.engine = "torch" if ic(is_cuda_usable()) else "optimum"
+        self.engine = "torch"
         self.device = "cuda" if is_cuda_usable() else "cpu"
         self.batch_size = int(os.getenv("INFINITY_BATCH_SIZE", 32))
 
@@ -318,7 +320,7 @@ class InfinityEmbeddings(EmbedderBase):
                 engine=self.engine,
                 device=self.device,
                 embedding_dtype="float32",
-                dtype=torch.bfloat16 if self.device == "cuda" else "auto",
+                dtype="bfloat16" if self.device == "cuda" else "auto",
                 batch_size=self.batch_size,
                 model_warmup=True,
                 bettertransformer=False,
