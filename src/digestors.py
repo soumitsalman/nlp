@@ -575,6 +575,7 @@ class NamedEntityExtractor(DigestorBase):
             labels_embeddings=self._label_embeddings,
             labels=self._LABELS,
             threshold=self.threshold,
+            batch_size=16,
         )
         digests = [self._parse_output(group) if group else None for group in entities]        
         return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
