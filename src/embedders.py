@@ -172,6 +172,7 @@ class TransformerEmbeddings(EmbedderBase):
         self._model = None
 
     def _embed(self, texts: str|list[str]):
+        if not self._model: self.__enter__()
         with torch.inference_mode(), torch.no_grad():
             embs = self._model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
         return embs    
