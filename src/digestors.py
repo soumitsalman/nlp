@@ -240,7 +240,7 @@ class RemoteDigestor(DigestorBase):
     def __enter__(self):
         if not self._llm:
             from openai import OpenAI
-            self._llm = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3)
+            self._llm = OpenAI(api_key=ic(self.api_key), base_url=ic(self.base_url), timeout=180, max_retries=3)
         return self
 
     # @retry(tries=3, jitter=(60, 120))
@@ -302,7 +302,7 @@ class NamedEntityExtractor(DigestorBase):
     _MIN_SIZE = 100
 
     def __init__(self, model_path: str, context_len: int = 4096, threshold=0.5) -> None:
-        super().__init__(model_name=model_path, context_len=context_len)
+        super().__init__(model_name=model_path, context_len=context_len, system_prompt=None, input_template=None, output_model=None)
         self.threshold = threshold
         self._label_embeddings = None        
     
@@ -391,7 +391,7 @@ class NamedEntityExtractor(DigestorBase):
             threshold=self.threshold,
             batch_size=16,
         )
-        digests = [self._parse_output(group) if group else None for group in entities]        
+        digests = [self.parse_output(group) if group else None for group in entities]        
         return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
 
 

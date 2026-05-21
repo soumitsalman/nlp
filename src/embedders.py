@@ -338,13 +338,13 @@ class InfinityEmbeddings(EmbedderBase):
         return False
 
 
-def from_path(
+def create_embedder(
     model_path: str, 
     context_len: int = 512,
     base_url: str = None,
     api_key: str = None
 ) -> EmbedderBase:
-    # initialize digestor
+    # initialize embedder
     if base_url: return RemoteEmbeddings(model_path, base_url, api_key, context_len)
     if model_path.startswith(LLAMACPP_PREFIX): return LlamaCppEmbeddings(model_path.removeprefix(LLAMACPP_PREFIX), context_len)
     if model_path.startswith(OPENVINO_PREFIX): return OVEmbeddings(model_path.removeprefix(OPENVINO_PREFIX), context_len)
