@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Optional, Type
 from pydantic import BaseModel
-from retry import retry
 from .models import *
 from .utils import *
 from icecream import ic
@@ -27,22 +26,42 @@ DEFAULT_SAMPLING_PARAMS = {
 }
 DEFAULT_CONTEXT_LEN = 32768
 
+DIGEST_SYS = """
+TASK=EXTRACT parsed_information FROM content IF specified
+RULES=
+exclude:unspecified data, implied assessments, assumptions
+remove:N/A,null values, empty fields
+avoid:markdown,prose,code_fences,null_placeholders,implied_information,assumptions
+RESPONSE=JSON object matching schema
+{schema}
+"""
+DIGEST_INST = """DETERMINE {fields} FROM content IF specified\n=== content ===\n{text}"""
+
+BRIEFING_SYS = """
+TASK=CREATE intelligence_signal FROM EventStream
+RULES=
+grounding:normative,multi_events,strict_tracing
+phrasing:structured,dynamic,specific,granular,direct
+tone:informative,objective,concrete,analytical,data_driven
+avoid:clickbait,sensationalism,ambiguity,vagueness,generic_phrasing,speculative_narrative,emotive_language
+RESPONSE=JSON object matching schema
+{schema}
+"""
+BRIEFING_INST = "CREATE intelligence_signal FROM EventStream\n\n{event_stream}"
+
 class DigestorBase(ABC):
     def __init__(
         self,
         model_name: str,
-        context_len: int,
-        system_prompt: str,
-        input_template: str,
-        output_model: Type[BaseModel],
+        context_len: int = DEFAULT_CONTEXT_LEN,
+        output_model: Type[BaseModel] = Digest,
+        response_mode: str = "json",
         **sampling_params,
     ):
         self.model_name = model_name
         self.context_len = context_len
-        self.system_prompt = system_prompt
-        self.input_template = input_template
         self.output_model = output_model
-        self.response_mode = "json" if output_model else None
+        self.response_mode = response_mode
         self.sampling_params = {
             **DEFAULT_SAMPLING_PARAMS,
             **sampling_params,
@@ -63,13 +82,20 @@ class DigestorBase(ABC):
             clear_gpu_cache()
         return False
 
-    def create_prompt(self, msg: str):
-        prompt = []
-        if self.system_prompt: prompt.append({"role": "system", "content": self.system_prompt})
-        prompt.append({"role": "user", "content": self.input_template.format(input_text=msg) if self.input_template else msg})
-        return prompt
+    def _create_prompts(self, input_messages: list[str]):
+        prompt = lambda msg: [
+            {"role": "system", "content": DIGEST_SYS},
+            {
+                "role": "user",
+                "content": DIGEST_INST.format(
+                    fields=",".join(self.output_model.model_fields.keys()),
+                    text=msg[: self.context_len >> 1],
+                ),
+            },
+        ]
+        return [prompt(msg) for msg in input_messages]
 
-    def parse_output(self, response: str):
+    def _parse_output(self, response: str):
         response = _strip_fences(response)
         try:
             if self.response_mode == "json":
@@ -85,7 +111,7 @@ class DigestorBase(ABC):
             log.warning("failed parsing: %s", response, exc_info=True)
 
     @abstractmethod
-    def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
         raise NotImplementedError()
 
 
@@ -146,16 +172,35 @@ class LocalTokenizer:
 # "no_repeat_ngram_size": 3,
 class TransformerDigestor(DigestorBase):
     _tokenizer = None
+
+    def __init__(
+        self,
+        model_path: str,
+        context_len: int,
+        output_model: Type[BaseModel] = Digest,
+        response_mode: str = "json",
+        **sampling_params,
+    ):
+        super().__init__(
+            model_name=model_path,
+            context_len=context_len,
+            output_model=output_model,
+            response_mode=response_mode,
+            **sampling_params,
+        )
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.dtype = torch.bfloat16
+        self._tokenizer = None
+        self._sampling_params = {(k if k!= "max_tokens" else "max_new_tokens"): v for k, v in self.sampling_params.items()}
                 
     def __enter__(self):
         if not self._llm:
             from transformers import AutoModelForCausalLM
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            dtype = torch.bfloat16
-            self._llm = AutoModelForCausalLM.from_pretrained(self.model_name, dtype=dtype, device_map=device).to(device)
-            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, device)
-            self._sampling_params = {(k if k!= "max_tokens" else "max_new_tokens"): v for k, v in self.sampling_params.items()}
+            self._llm = AutoModelForCausalLM.from_pretrained(
+                self.model_name, dtype=self.dtype, device_map=self.device
+            ).to(self.device)
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
 
             if self.response_mode == "json":
                 from lmformatenforcer import JsonSchemaParser
@@ -184,10 +229,65 @@ class TransformerDigestor(DigestorBase):
         return generated_texts
 
     def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
-        if not self._llm: self.__enter__()
+        if not self._llm:
+            self.__enter__()
 
-        generated_texts = self._run_batch([self.create_prompt(msg) for msg in input_messages])
-        return [self.parse_output(text) for text in generated_texts]
+        generated_texts = self._run_batch(self._create_prompts(input_messages))
+        return [self._parse_output(text) for text in generated_texts]
+
+class OVDigestor(TransformerDigestor):
+    def __enter__(self):
+        if not self._llm:
+            from optimum.intel.openvino import OVModelForSeq2SeqLM
+
+            self._llm = OVModelForSeq2SeqLM.from_pretrained(self.model_name)
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
+        return self
+
+    def _run_batch(self, prompts):
+        input_tokens = self.tokenizer.tokenize_prompts(prompts)
+        output_tokens = self.model.generate(**input_tokens, **self._sampling_params)
+        return self.tokenizer.batch_decode(output_tokens)
+
+
+class ORTDigestor(TransformerDigestor):
+    def __enter__(self):
+        if not self._llm:
+            from optimum.onnxruntime import ORTModelForCausalLM
+
+            self._llm = ORTModelForCausalLM.from_pretrained(
+                self.model_name,
+                provider_options={
+                    "CPUExecutionProvider": {
+                        "arena_extend_strategy": "kSameAsRequested",
+                        "cpu_threads": os.cpu_count() - 1,
+                        "enable_parallel_execution": True,
+                        "execution_mode": "parallel",
+                    }
+                },
+                provider="CUDAExecutionProvider"
+                if torch.cuda.is_available()
+                else "CPUExecutionProvider",
+            )
+            self._tokenizer = LocalTokenizer(
+                self.model_name,
+                self.context_len,
+                self.max_new_tokens,
+                self.device,
+            )
+
+            # self._sampling_params = {
+            #     **{k: v for k, v in self.sampling_params.items() if k != "max_tokens"},
+            #     "pad_token_id": self._tokenizer.pad_token_id,
+            #     "eos_token_id": self._tokenizer.eos_token_id,
+            # }
+
+        return self
+
+    def _run_batch(self, prompts):
+        input_tokens = self._tokenizer.tokenize_prompts(prompts)
+        output_tokens = self._llm.generate(**input_tokens, **self._sampling_params)
+        return self._tokenizer.batch_decode(output_tokens)
 
 
 class VLLMDigestor(DigestorBase):
@@ -206,57 +306,158 @@ class VLLMDigestor(DigestorBase):
             )
         return self
 
-    def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
-        responses = self._llm.chat([self.create_prompt(msg) for msg in input_messages], sampling_params=self._sampling_params, use_tqdm=False)
-        return [self.parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
+        responses = self._llm.chat(
+            self._create_prompts(input_messages),
+            sampling_params=self._sampling_params,
+            use_tqdm=False,
+        )
+        return [
+            self._parse_output(resp.outputs[0].text) if resp.outputs else None
+            for resp in responses
+        ]
 
 
-class RemoteDigestor(DigestorBase):
+class VLLMDigestorToolCall(VLLMDigestor):
+    TOOL_NAME = "extract_fields"
+
+    def __enter__(self):
+        if not self._llm:
+            from vllm import LLM, SamplingParams
+
+            self._llm = LLM(model=self.model_name)
+            self._sampling_params = SamplingParams(**self.sampling_params)
+        return self
+
+    def _create_prompts(self, input_messages: list[str]):
+        prompt = lambda msg: [
+            {
+                "role": "system",
+                "content": f"List of tools: {json.dumps([self._build_tool_schema(self.output_model)])}",
+            },
+            {
+                "role": "user",
+                "content": self._INST_MSG.format(
+                    fields=",".join(self.output_model.model_fields.keys()),
+                    text=msg[: self.context_len >> 2],
+                ),
+            },
+        ]
+        return [prompt(msg) for msg in input_messages]
+
+    def _parse_output(self, text: str):
+        cleaned = _strip_fences(text)
+        payload = json.loads(cleaned)
+
+        if isinstance(payload, list):
+            if len(payload) != 1:
+                raise ValueError(f"Expected exactly one tool call, got {len(payload)}")
+            payload = payload[0]
+
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"Unexpected tool call payload type: {type(payload).__name__}"
+            )
+
+        if payload.get("name") == TOOL_NAME:
+            arguments = payload.get("arguments", {})
+        elif payload.get("function", {}).get("name") == TOOL_NAME:
+            arguments = payload["function"].get("arguments", {})
+        elif payload.get("tool_name") == TOOL_NAME:
+            arguments = payload.get("arguments", {})
+        else:
+            raise ValueError(
+                f"Could not find {TOOL_NAME} tool call in payload: {payload}"
+            )
+
+        if isinstance(arguments, str):
+            arguments = json.loads(arguments)
+
+        return self.output_model.model_validate(arguments)
+
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
+        responses = self._llm.chat(
+            self._create_prompts(input_messages),
+            sampling_params=self._sampling_params,
+            use_tqdm=False,
+        )
+        return [
+            self._parse_output(resp.outputs[0].text) if resp.outputs else None
+            for resp in responses
+        ]
+
+    @classmethod
+    def _build_tool_schema(cls, model_type: Type[BaseModel]):
+        return {
+            "name": "extract_fields",
+            "description": "Extracts specified fields and contents from input.",
+            "parameters": model_type.model_json_schema(),
+        }
+
+
+class OpenAIDigestor(DigestorBase):
     def __init__(
         self,
         model_name: str,
         base_url: str,
         api_key: str,
         context_len: int,
-        system_prompt: str,
-        input_template: str,
-        output_model: Type[BaseModel],
+        output_model: Type[BaseModel] = Digest,
+        response_mode: str = "json",
         **sampling_params,
     ):
         super().__init__(
             model_name=model_name,
             context_len=context_len,
-            system_prompt=system_prompt,
-            input_template=input_template,
             output_model=output_model,
+            response_mode=response_mode,
             **sampling_params,
         )
         self.base_url = base_url
         self.api_key = api_key
-        self.sampling_params.pop('top_k', None)
-        self.sampling_params.pop('repetition_penalty', None)
-        self._sampling_params = self.sampling_params
 
     def __enter__(self):
         if not self._llm:
             from openai import OpenAI
-            self._llm = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3)
-        return self
 
-    # @retry(tries=3, jitter=(60, 120))
-    def _run_single(self, msg: str) -> BaseModel:
-        response = self._llm.chat.completions.parse(
-            model=self.model_name,
-            messages=self.create_prompt(msg),
-            response_format=self.output_model,
-            **self._sampling_params
-        )
-        return response.choices[0].message.parsed
+            self._llm = OpenAI(
+                api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3
+            )
+        return self
         
-    def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
-        if not self._llm: self.__enter__()
-        with ThreadPoolExecutor(max_workers=len(input_messages)) as exec:
-            results = list(exec.map(self._run_single, input_messages))
+    def run_batch(self, input_messages: list[str]) -> list[Digest | None]:
+        from openai import APIError
+
+        prompts = self._create_prompts(input_messages)
+        results = [None] * len(prompts)
+        errors = []
+
+        def process_single(idx, messages):
+            try:
+                response = self._llm.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=self.sampling_params.get("temperature", 0.2),
+                    top_p=self.sampling_params.get("top_p", 1.0),
+                    max_tokens=self.sampling_params.get("max_tokens", 2048),
+                    response_format={"type": "json_object", "json_schema": self.output_model.model_json_schema()}
+                    if self.response_mode == "json"
+                    else None,
+                )
+                text = response.choices[0].message.content
+                return idx, self._parse_output(text)
+            except Exception as e:
+                log.warning("OpenAI API error at index %d: %s", idx, str(e))
+                return idx, None
+
+        with ThreadPoolExecutor(max_workers=min(len(prompts), 8)) as executor:
+            futures = [
+                executor.submit(process_single, i, p) for i, p in enumerate(prompts)
+            ]
+            for future in futures:
+                idx, result = future.result()
+                results[idx] = result
+
         return results
 
 
@@ -337,10 +538,10 @@ class NamedEntityExtractor(DigestorBase):
             self._splitter = None
         return super().__exit__(exc_type, exc_val, exc_tb)
 
-    def create_prompt(self, msg: str):
-        return msg
+    def _create_prompts(self, input_messages: list[str]):
+        return input_messages
 
-    def parse_output(self, response):
+    def _parse_output(self, response):
         res = defaultdict(list)
         for ent in response:
             res[self._LABEL_FIELD_MAPPINGS[ent["label"]]].append(ent["text"])
@@ -395,68 +596,45 @@ class NamedEntityExtractor(DigestorBase):
         return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
 
 
-# ---------------------
-# AGENT UTILITIES
-# ---------------------
-
-DIGEST_SYS = """
-TASK=EXTRACT digest_fields FROM content IF specified
-RULES=
-exclude:unspecified data, implied assessments, assumptions
-remove:N/A,null values, empty fields
-avoid:markdown,prose,code_fences,null_placeholders,implied_information,assumptions
-RESPONSE=JSON object matching schema
-{schema}
-"""
-DIGEST_INST = """DETERMINE digest_fields FROM content IF specified\n=== content ===\n{input_text}"""
-
-BRIEFING_SYS = """
-TASK=CREATE intelligence_signal FROM EventStream
-RULES=
-grounding:normative,multi_events,strict_tracing
-phrasing:structured,dynamic,specific,granular,direct
-tone:informative,objective,concrete,analytical,data_driven
-avoid:clickbait,sensationalism,ambiguity,vagueness,generic_phrasing,speculative_narrative,emotive_language
-RESPONSE=JSON object matching schema
-{schema}
-"""
-BRIEFING_INST = "CREATE intelligence_signal FROM EventStream\n\n{input_text}"
-
-def create_digestor(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, system_template: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> DigestorBase:
-    sys_prompt = system_template.format(schema=output_model.model_text_schema()) if system_template and output_model else None
-    if model_path.startswith(VLLM_PREFIX):
+def from_path(model_path: str, context_len: int = None, **kwargs) -> DigestorBase:
+    if model_path.startswith(OPENVINO_PREFIX):
+        return OVDigestor(
+            model_path.removeprefix(OPENVINO_PREFIX),
+            context_len=context_len,
+            output_model=Digest,
+            **kwargs,
+        )
+    elif model_path.startswith(ONNX_PREFIX):
+        return ORTDigestor(
+            model_path.removeprefix(ONNX_PREFIX),
+            context_len=context_len,
+            output_model=Digest,
+            **kwargs,
+        )
+    elif model_path.startswith(VLLM_PREFIX):
         return VLLMDigestor(
             model_path.removeprefix(VLLM_PREFIX),
             context_len=context_len,
-            system_prompt=sys_prompt,
-            input_template=input_template,
-            output_model=output_model,
+            output_model=Digest,
             **kwargs,
         )
-    elif kwargs.get("base_url") and kwargs.get("api_key"):
-        return RemoteDigestor(
-            model_path,
-            base_url=kwargs.pop("base_url"),
-            api_key=kwargs.pop("api_key"),
+    elif model_path.startswith(OPENAI_PREFIX):
+        model = model_path.removeprefix(OPENAI_PREFIX)
+        base_url = kwargs.pop("base_url")
+        api_key = kwargs.pop("api_key")
+        return OpenAIDigestor(
+            model,
+            base_url=base_url,
+            api_key=api_key,
             context_len=context_len,
-            system_prompt=sys_prompt,
-            input_template=input_template,
-            output_model=output_model,
+            output_model=Digest,
             **kwargs,
         )
     else:
         return TransformerDigestor(
-            model_path, 
-            context_len=context_len, 
-            system_prompt=sys_prompt,
-            input_template=input_template,
-            output_model=output_model, 
-            **kwargs
+            model_path, context_len=context_len, output_model=Digest, **kwargs
         )
 
-# ---------------------
-# PARSING UTILITIES
-# ---------------------
 
 def _strip_fences(text: str) -> str:
     return (

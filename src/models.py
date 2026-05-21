@@ -6,6 +6,8 @@ import textcase
 from pydantic import BaseModel, Field
 
 class Digest(BaseModel):
+    """Main digest/key points of an article/news/blog/report"""
+
     # keywords
     regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. ex: USA,EU,China etc. exclude_pattern=N countries.")
     people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. exclude_pattern=N leaders.")
@@ -76,10 +78,7 @@ class Digest(BaseModel):
 
     @classmethod
     def model_text_schema(cls):
-        return "\n".join(
-            f"{fname}: {typeinfo(finfo.annotation)}|{finfo.description}"
-            for fname, finfo in cls.model_fields.items()
-        )
+        return model_text_schema(cls)
 
     @classmethod
     def model_json_schema(cls):
@@ -100,11 +99,7 @@ class Digest(BaseModel):
         return super().model_dump(**kwargs)
 
     def __str__(self):
-        return text_value(self, field_delim="\n")        
-
-    @property
-    def gist(self):
-        return text_value(self, item_delim="|", field_delim=";")
+        return text_value(self)
 
 # ────────────────────────────────────────────────
 # Domain-specific models (inherit from base)
@@ -560,6 +555,45 @@ class FinancialDocumentSummary(Digest):
     )
 
 
+class Briefing(BaseModel):
+    """Intelligence briefing for a given events stream."""       
+    # intelligence
+    briefing: str = Field(description="One liner intelligence briefing. Format: [WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
+    events: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Sequence of events. "
+            "Format: [TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT]. "
+            "ex: 2026-05-19: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
+        )
+    )
+    drivers: list[str] = Field(description="Primary macro context and causal chain driving or leading to the events")
+    impacts: list[str] = Field(description="List of observed impacts of the events sequence.")
+    impacted_domains: list[str] = Field(description="List of domains impacted by the events sequence.")
+    impact_level: str = Field(description="Overall impact level. ALLOWED: null, low, medium, high, critical, transformative")
+    forecast: str = Field(description="One-liner forecast and short-term implication of the events sequence.")
+    tags: list[str] = Field(description="List of search tags")
+
+    def model_post_init(self, __context):
+        if self.impacted_domains: self.impacted_domains = valid_tags(self.impacted_domains)
+        if self.impact_level: self.impact_level = valid_impact_or_risk(self.impact_level)
+        if self.tags: self.tags = valid_tags(self.tags)
+
+    def model_dump(self, **kwargs):
+        defaults = {
+            "exclude_none": True,
+            "exclude_unset": True,
+            "exclude_defaults": True,
+        }
+        kwargs = {**defaults, **kwargs}
+        return super().model_dump(**kwargs)
+
+    @classmethod
+    def model_text_schema(cls):
+        return model_text_schema(cls)
+
+    def __str__(self):
+        return text_value(self)        
 
 # ────────────────────────────────────────────────
 # Post initialization cleanup
@@ -613,6 +647,12 @@ def cleanup_digest_fields(digest, __context):
 # ────────────────────────────────────────────────
 # Schema generation utilities
 # ────────────────────────────────────────────────
+
+def model_text_schema(model: BaseModel):
+    return "\n".join(
+        f"{fname}={finfo.description}"
+        for fname, finfo in model.model_fields.items()
+    )
 
 def typeinfo(annotation: Any) -> str:
     """Render a readable type name from a Pydantic FieldInfo annotation."""
@@ -669,6 +709,5 @@ def text_value(val, item_delim="|", field_delim="\n") -> str:
         if value := getattr(val, field_name):
             if isinstance(value, list): value_str = item_delim.join(str(v) for v in value)
             else: value_str = str(value)
-            lines.append(f"{field_name}={value_str}")
+            lines.append(f"{field_name}:{value_str}")
     return field_delim.join(lines)
-

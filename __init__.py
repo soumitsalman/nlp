@@ -1,8 +1,8 @@
 __all__ = [
     'models', 'embedders', 'digestors',
-    'Digest', 'EmbedderBase', 'DigestorBase',
-    'RemoteEmbeddings', 'TransformerEmbeddings', 'OVEmbeddings', 'ORTEmbeddings', 'LlamaCppEmbeddings', 'VLLMEmbeddings', 'InfinityEmbeddings',
-    'TransformerDigestor', 'OVDigestor', 'ORTDigestor', 'VLLMDigestor', 'OpenAIDigestor',
+    'Digest', "Briefing", 'EmbedderBase', 'DigestorBase',
+    'RemoteEmbeddings', 'TransformerEmbeddings', 'VLLMEmbeddings', 'InfinityEmbeddings',
+    'TransformerDigestor', 'VLLMDigestor', 'RemoteDigestor', 'NamedEntityExtractor',
 ]
 
 from .src import digestors, embedders, models
