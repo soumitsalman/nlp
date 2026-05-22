@@ -17,19 +17,19 @@ class Digest(BaseModel):
     tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. ex: agentic_ai,sovereign_compute,defense_tech etc.")
     
     # intelligence
-    briefing: Optional[str] = Field(default=None, description="Intelligence briefing. Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
+    briefing: Optional[str] = Field(default=None, description="Intelligence briefing. Include: when, who, action/what, target/object, in/at, where, using/via, how, result/impact.")
     events: List[str] = Field(
         default_factory=list,
         description=(
-            "Sequences of key facts,events,datapoints for intelligence briefing. "
-            "Format=[TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT]. "
+            "List of key events,datapoints for intelligence briefing. "
+            "Include: time, actor, action, object, context/how, result/impact/effect. "
             "ex: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
         )
     )        
     macro_context: Optional[str] = Field(
         None,
         description=(
-            "Primary geopolitical, trade, economic or technological context driving the key points. Length<=5words. "
+            "Primary geopolitical,trade,economic or technological context driving the events. Length<=5words. "
             "ex: us_iran_conflict, red_sea_disruption, tariff_volatility, rare_earth_controls, arctic_shipping_rivalry, africa_mineral_conflict, cyber_arms_race_escalation etc."
         ),
     )
@@ -562,8 +562,8 @@ class Briefing(BaseModel):
     events: list[str] = Field(
         default_factory=list,
         description=(
-            "Sequence of events. "
-            "Include: time, actor, action, object, context/how, result/impact. "
+            "Sequence of related events. "
+            "Include: time, actor, action, object, context/how, result/impact/effect. "
             "ex: 2026-05-19: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
         )
     )
