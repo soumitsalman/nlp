@@ -8,8 +8,6 @@ ONNX_PREFIX = "onnx://"
 OPENVINO_PREFIX = "openvino://"
 VLLM_PREFIX = "vllm://"
 INFINITY_PREFIX = "infinity://"
-OPENAI_PREFIX = "openai://"
-API_URL_PREFIX = "https://"
 NUM_THREADS = os.cpu_count()
 
 _ALLOWED_SPECIAL_TOKENS = {

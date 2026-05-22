@@ -1,15 +1,31 @@
-# Coffeemaker — Embeddings & Digest Utilities
+# Coffeemaker — Embeddings & Simple Agent Utilities
 
-Professional, lightweight utilities for two common NLP pipelines:
+Lightweight NLP utilities for Coffeemaker:
 
-- Embedding generation (vectorize text for retrieval and semantic search)
-- Digest generation (produce structured JSON with title, summary, highlights, named entities, and domains)
+- **Embeddings** — vectorize text for retrieval and semantic search
+- **Digests** — structured extraction (entities, events, briefing fields) via Pydantic models
+- **Named entities** — GLiNER-based extraction (`EntityExtractor`)
 
-The package exposes the core modules at the top level (imports work as `from nlp import embedders, digestors, models`). Examples in this README use the package-level imports.
+Public API: `create_embedder`, `create_digestor`, `Digest`, `Briefing`, and backend classes (see `__init__.py`).
+
+## Package layout
+
+```
+nlp/
+├── __init__.py          # exports: create_embedder, create_digestor, Digest, …
+├── embedders.py         # EmbedderBase + backends; create_embedder()
+├── agents.py         # DigestorBase + backends; create_digestor(); markdown/compressed parsers
+├── models.py            # Digest, Briefing, domain-specific digest schemas
+├── utils.py             # model-path prefixes, run_batch helper
+├── requirements.txt
+├── tests/
+│   ├── test.py          # embedder / digestor / NER smoke tests
+│   ├── texts-for-nlp.json
+│   └── text-for-generator.json
+└── deprecated/          # legacy agents, agents, prompts (not used by current API)
+```
 
 ## Installation
-
-Install runtime dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -17,127 +33,200 @@ pip install -r requirements.txt
 
 ## Quickstart
 
-Import the modules from the package and create clients using the `from_path(...)` factories.
-
-### Embedding example
+### Embedding
 
 ```python
-from nlp import embedders
+from nlp import create_embedder
 
 texts = [
     "AI will change how developers build software.",
-    "Open-source models enable local experimentation."
+    "Open-source models enable local experimentation.",
 ]
 
-# Create an embedder. Provide a remote base_url/api_key for API-backed embeddings
-# or a local model identifier/path for on-device embeddings.
-embedder = embedders.from_path(model_path="sentence-transformers/all-MiniLM-L6-v2", context_len=512)
+embedder = create_embedder(
+    model_path="sentence-transformers/all-MiniLM-L6-v2",
+    context_len=512,
+)
 with embedder:
-    vectors = embedder.embed_documents(texts)        # -> list[list[float]]
-    qvec = embedder.embed_query("What will change in developer tooling?")  # -> list[float]
-
-print(f"Generated {len(vectors)} vectors; first vector length: {len(vectors[0])}")
+    vectors = embedder.embed_documents(texts)   # list[list[float]]
+    qvec = embedder.embed_query("What will change in developer tooling?")  # list[float]
 ```
 
-### Digest example
+### Digest (structured JSON via Pydantic)
 
 ```python
-from nlp import digestors, models
+from nlp import create_digestor, Digest
 
-article = "Long article text or markdown content to summarize and extract entities from..."
+article = "Long article text to summarize and extract intelligence from..."
 
-# Create a digestor and provide an output parser to convert raw model output into a typed model
-digestor = digestors.from_path(
-    model_path="soumitsr/led-base-article-digestor",
-    max_input_tokens=1024,
-    max_output_tokens=256,
-    output_parser=models.Digest.parse_markdown
+digestor = create_digestor(
+    model_path="LiquidAI/LFM2.5-1.2B-Instruct",
+    context_len=4096,
+    instruction="Extract structured intelligence per the schema.",
+    input_template="{msg}",
+    output_model=Digest,
 )
 
 with digestor:
-    result = digestor.run(article)
+    results = digestor.run_batch([article])
 
-if isinstance(result, models.Digest):
-    print(result.raw)
-    print(result.keypoints)
-else:
-    print(result)
+digest = results[0]
+print(digest.model_dump())
 ```
 
 #### Batching
 
 ```python
-inputs = [article, article]
 with digestor:
-    digests = digestor.run_batch(inputs)  # -> list[models.Digest | str]
+    digests = digestor.run_batch([article, article])  # list[Digest | None]
+```
+
+### Named entity extraction
+
+```python
+from nlp.agents import EntityExtractor
+from nlp import Digest
+
+with EntityExtractor(
+    "knowledgator/modern-gliner-bi-base-v1.0",
+    context_len=4096,
+    threshold=0.4,
+) as extractor:
+    entities = extractor.run_batch([article])
 ```
 
 ## Backend selection
 
-The `from_path(...)` factories automatically select a backend based on the model path prefix. Supported backends:
+`create_embedder` / `create_digestor` pick a backend from the model path (and optional remote credentials).
 
-| Prefix | Backend | Use case |
-|--------|---------|----------|
-| (none, default) | HuggingFace Transformer (or Sentence Transformer for embedders) | Local model from HuggingFace Hub or local path |
-| `onnx://` | ONNX Runtime | Optimized inference on CPU/GPU with ONNX models |
-| `openvino://` | OpenVINO | Intel-optimized models for CPU inference |
-| `llamacpp://` | llama.cpp | Quantized models for lightweight local inference |
-| `infinity://` | Infinity in-process (`SyncEngineArray`) | High-throughput local embeddings via `infinity_emb` |
-| `https://` | OpenAI-compatible API | Remote API endpoints (e.g., OpenAI, custom servers) |
+| Prefix / signal | Backend | Use case |
+|-----------------|---------|----------|
+| (none) | `TransformerEmbeddings` / `TransformerDigestor` | HuggingFace Hub or local path |
+| `onnx://` | `ORTEmbeddings` | ONNX Runtime (embeddings) |
+| `openvino://` | `OVEmbeddings` | OpenVINO (embeddings) |
+| `llamacpp://` | `LlamaCppEmbeddings` | llama.cpp GGUF (embeddings) |
+| `vllm://` | `VLLMEmbedder` / `VLLMDigestor` | vLLM batched inference |
+| `infinity://` | `InfinityEmbeddings` | `infinity_emb` in-process embeddings |
+| `base_url` (+ `api_key` for agents) | `RemoteEmbeddings` / `RemoteDigestor` | OpenAI-compatible HTTP API |
+
+Prefix constants live in `utils.py`.
 
 Examples:
 
 ```python
-# HuggingFace Transformer (default)
-embedder = embedders.from_path("sentence-transformers/all-MiniLM-L6-v2", context_len=512)
+# HuggingFace (default)
+create_embedder("sentence-transformers/all-MiniLM-L6-v2", context_len=512)
 
-# ONNX backend
-embedder = embedders.from_path("onnx://./model.onnx", context_len=512)
+# ONNX / OpenVINO / llama.cpp / vLLM / Infinity
+create_embedder("onnx://./model.onnx", context_len=512)
+create_embedder("openvino://./model_ir.xml", context_len=512)
+create_embedder("llamacpp://./model.gguf", context_len=512)
+create_embedder("vllm://BAAI/bge-small-en-v1.5", context_len=512)
+create_embedder("infinity://BAAI/bge-small-en-v1.5", context_len=512)
 
-# OpenVINO backend
-embedder = embedders.from_path("openvino://./model_ir.xml", context_len=512)
-
-# llama.cpp backend
-embedder = embedders.from_path("llamacpp://./model.gguf", context_len=512)
-
-# Infinity in-process backend
-embedder = embedders.from_path("infinity://BAAI/bge-small-en-v1.5", context_len=512)
-
-# OpenAI-compatible remote API
-embedder = embedders.from_path(
-    model_path="text-embedding-3-small",  # model name or ID
+# Remote embeddings
+create_embedder(
+    model_path="text-embedding-3-small",
     context_len=512,
     base_url="https://api.openai.com/v1",
-    api_key="sk-..."
+    api_key="sk-...",
+)
+
+# Remote digestor (requires both base_url and api_key)
+create_digestor(
+    model_path="gpt-4o-mini",
+    context_len=8192,
+    output_model=Digest,
+    base_url="https://api.openai.com/v1",
+    api_key="sk-...",
 )
 ```
 
 ## API summary
 
-- `embedders.from_path(model_path, context_len, base_url=None, api_key=None)` -> returns an `EmbedderBase` implementation
-  - `embed_documents(text_or_list)` -> `list[list[float]]` or `list[float]` for a single string
-    - When input text exceeds the model's context window, the backend automatically chunks the input into smaller pieces, embeds each chunk separately, and then computes the **mean** of all chunk embeddings to produce a single vector representing the full document.
-  - `embed_query(query)` -> `list[float]`
-  - supports context manager usage (`with embedder:`)
+**`create_embedder(model_path, context_len=512, base_url=None, api_key=None)`** → `EmbedderBase`
 
-- `digestors.from_path(model_path, max_input_tokens, max_output_tokens, base_url=None, api_key=None, output_parser=None)` -> returns a `DigestorBase` implementation
-  - `run(input_msg)` -> `str` (raw) or the `output_parser` return value (commonly `models.Digest` or a `dict`)
-  - `run_batch(list_of_inputs)` -> `list` of same return items as `run`
+- `embed_documents(text | list[str])` → `list[float]` or `list[list[float]]`
+  - Long inputs are chunked; chunk embeddings are **mean**-pooled per document.
+- `embed_query(query)` → `list[float]`
+- Use as context manager: `with embedder:`
+
+**`create_digestor(model_path, context_len=32768, instruction=None, input_template=None, output_model=Digest, **kwargs)`** → `DigestorBase`
+
+- `run_batch(list[str])` → `list[BaseModel | None]` (type depends on `output_model`)
+- Remote backend: pass `base_url` and `api_key` in `kwargs`
+- Use as context manager: `with digestor:`
 
 ## Return types
 
-- Embeddings: `list[float]` (vector) or `list[list[float]]` (multiple vectors)
-- Digests: `str` (raw text) or structured Pydantic models such as `models.Digest` / `models.Metadata` when using parser callables
+- Embeddings: `list[float]` or `list[list[float]]`
+- Digests: Pydantic models (`Digest`, `Briefing`, or domain subclasses in `models.py`) when `output_model` is set; `None` if parsing fails
+- Legacy markdown/compressed parsers: `parse_markdown`, `parse_compressed` in `agents.py`
 
 ## Implementation notes
 
-- The package exposes backends for remote and local models. See `nlp/src/embedders.py` for available embedder implementations (`RemoteEmbeddings`, `LlamaCppEmbeddings`, `TransformerEmbeddings`, `OVEmbeddings`, `ORTEmbeddings`) and how `from_path` dispatches by prefix.
-- See `nlp/src/digestors.py` for the `TransformerDigestor`, `OVDigestor`, and `ORTDigestor` implementations and how `output_parser` is applied to results.
-- For structured outputs prefer using parser callables from `nlp/src/models.py` (`Digest.parse_markdown`, `Digest.parse_json`, `Metadata.parse_json`).
+- Embedder backends: `embedders.py` (`RemoteEmbeddings`, `LlamaCppEmbeddings`, `TransformerEmbeddings`, `OVEmbeddings`, `ORTEmbeddings`, `VLLMEmbedder`, `InfinityEmbeddings`)
+- Digestor backends: `agents.py` (`TransformerDigestor`, `VLLMDigestor`, `RemoteDigestor`, `EntityExtractor`)
+- Schemas and domain variants: `models.py` (`Digest`, `Briefing`, `AINewsDigest`, `FinancialMarketsNewsSummary`, …)
+- Tests: `tests/test.py` (run from repo root with `nlp` on `PYTHONPATH`)
 
 ## Contribution
 
-- Keep digests concise and faithful to the source tone.
-- Tune batch sizes for embeddings according to available memory and backend limits.
+- Keep digests concise and faithful to source tone.
+- Tune embedding batch sizes for available GPU memory and backend limits.
 
-See the `src` package for full implementation details and advanced configuration.
+---
+## APPENDIX: Content Generation Models Evaluation
+
+### Digest & Summary Generation
+
+| Model | Rating | Cost | Key Notes |
+|-------|--------|------|-----------|
+| `meta-llama/Llama-4-Scout-17B-16E-Instruct` | ⭐ Very Good | ~$0.10/M | Balanced size & quality, well-structured summaries, maintains tone |
+| `nvidia/Llama-3.1-Nemotron-70B-Instruct` | ⭐ Very Good | ~$0.12/M | High-quality digests, strong instruction following |
+| `NovaSky-AI/Sky-T1-32B-Preview` | ⭐ Good | ~$0.12/M | Decent performance, good for structured outputs |
+| `google/gemma-3-27b-it` | ⭐ Good | ~$0.10/M | Bullet points, translates well, tone preservation (high cost relative to quality) |
+| `meta-llama/Meta-Llama-3-8B-Instruct` | ⭐ Good | ~$0.03/M | Bullet points, some filler text, best cost-to-quality ratio |
+| `mistralai/Mistral-Small-24B-Instruct-2501` | ❌ Poor | – | Verbose, poor tone/style preservation |
+| `mistralai/Mistral-Nemo-Instruct-2407` | ❌ Poor | – | Excessive verbosity, poor translation |
+| `microsoft/Phi-4-multimodal-instruct` | ❌ Poor | – | Low quality output |
+| `Qwen/Qwen2.5-7B-Instruct` | ❌ Poor | – | Poor translation, weak multilingual support |
+| `google/gemini-1.5-flash` | ❌ Poor | – | No bullet points, poor tone preservation |
+| `meta-llama/Llama-3.2-3B-Instruct` | ❌ Poor | – | Excessively verbose |
+| `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` | ❌ Poor | – | Excessively verbose |
+| `Gryphe/MythoMax-L2-13b` | ❌ Poor | – | Low quality output |
+
+### Local Models (Self-Hosted)
+
+| Model Category | Recommendation | Notes |
+|---|---|---|
+| `soumitsr/led-base-article-digestor` (Seq2Seq) | ⭐ Preferred | Better efficiency, control over format, ideal for on-device |
+| `soumitsr/SmolLM2-360M-Instruct-article-digestor` (Decoder) | ⭐ Preferred | Better efficiency, control over format, ideal for on-device |
+
+### Article & Content Generation
+
+| Model | Rating | Cost | Key Notes |
+|-------|--------|------|-----------|
+| `o3-mini` / `o4-mini` | ⭐ Excellent | API | Strong instruction following, occasional API edge cases |
+| `deepseek-ai/DeepSeek-R1` (or `0528`) | ⭐ Good | – | Well-structured articles, good compliance |
+| `microsoft/WizardLM-2-8x22B` | ⭐ Good | – | Solid article generation |
+| `NovaSky-AI/Sky-T1-32B-Preview` | ⚠️ Mixed | ~$0.12/M | Underwhelming performance |
+| `Sao10K/L3.1-70B-Euryale-v2.2` | ⚠️ Mixed | – | Acceptable but inconsistent instruction following |
+| `nvidia/Llama-3.1-Nemotron-70B-Instruct` | ⚠️ Mixed | ~$0.12/M | Poor instruction following for articles |
+| `gpt-4.1-nano` / `gpt-4-mini` | ❌ Poor | API | Not suitable for content generation |
+
+### Image Generation
+
+| Model | Rating | Cost | Key Notes |
+|-------|--------|------|-----------|
+| `black-forest-labs/FLUX-1-schnell` | ⭐ Good | ~$0.0005 | Fast, low cost |
+| `black-forest-labs/FLUX-1-dev` | ⭐ Good | ~$0.009 | Better quality |
+| `run-diffusion/Juggernaut-Lightning-Flux` | ⭐ Good | ~$0.009 | Strong quality/speed balance |
+| `run-diffusion/Juggernaut-Flux` | ⭐ Good | ~$0.009 | Higher quality, slower |
+| `stabilityai/sdxl-turbo` | ❌ Poor | ~$0.0002 | Poor quality |
+| `stabilityai/sd3.5-medium` | ❌ Poor | ~$0.03 | Mediocre output, high cost |
+
+### Named Entity Extraction
+| Model | Rating |
+|-------|--------|
+| `knowledgator/modern-gliner-bi-base-v1.0` | ⭐ Great | 

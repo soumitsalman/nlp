@@ -27,19 +27,19 @@ DEFAULT_SAMPLING_PARAMS = {
 }
 DEFAULT_CONTEXT_LEN = 32768
 
-class DigestorBase(ABC):
+class MicroAgentBase(ABC):
     def __init__(
         self,
         model_name: str,
         context_len: int,
-        system_prompt: str,
+        instruction: str,
         input_template: str,
         output_model: Type[BaseModel],
         **sampling_params,
     ):
         self.model_name = model_name
         self.context_len = context_len
-        self.system_prompt = system_prompt
+        self.instruction = instruction
         self.input_template = input_template
         self.output_model = output_model
         self.response_mode = "json" if output_model else None
@@ -65,7 +65,7 @@ class DigestorBase(ABC):
 
     def create_prompt(self, msg: str):
         prompt = []
-        if self.system_prompt: prompt.append({"role": "system", "content": self.system_prompt})
+        if self.instruction: prompt.append({"role": "system", "content": self.instruction})
         prompt.append({"role": "user", "content": self.input_template.format(input_text=msg) if self.input_template else msg})
         return prompt
 
@@ -144,7 +144,7 @@ class LocalTokenizer:
 
 # needs 1.3 for repetition penalty support, and max_new_tokens = 384
 # "no_repeat_ngram_size": 3,
-class TransformerDigestor(DigestorBase):
+class TransformerMicroAgent(MicroAgentBase):
     _tokenizer = None
                 
     def __enter__(self):
@@ -190,7 +190,7 @@ class TransformerDigestor(DigestorBase):
         return [self.parse_output(text) for text in generated_texts]
 
 
-class VLLMDigestor(DigestorBase):
+class VLLMMicroAgent(MicroAgentBase):
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
@@ -211,14 +211,14 @@ class VLLMDigestor(DigestorBase):
         return [self.parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
 
 
-class RemoteDigestor(DigestorBase):
+class RemoteMicroAgent(MicroAgentBase):
     def __init__(
         self,
         model_name: str,
         base_url: str,
         api_key: str,
         context_len: int,
-        system_prompt: str,
+        instruction: str,
         input_template: str,
         output_model: Type[BaseModel],
         **sampling_params,
@@ -226,7 +226,7 @@ class RemoteDigestor(DigestorBase):
         super().__init__(
             model_name=model_name,
             context_len=context_len,
-            system_prompt=system_prompt,
+            instruction=instruction,
             input_template=input_template,
             output_model=output_model,
             **sampling_params,
@@ -235,12 +235,12 @@ class RemoteDigestor(DigestorBase):
         self.api_key = api_key
         self.sampling_params.pop('top_k', None)
         self.sampling_params.pop('repetition_penalty', None)
-        self._sampling_params = self.sampling_params
+        self._sampling_params = {k:v for k, v in self.sampling_params.items() if k not in ["top_k", "repetition_penalty"] or not v}
 
     def __enter__(self):
         if not self._llm:
             from openai import OpenAI
-            self._llm = OpenAI(api_key=ic(self.api_key), base_url=ic(self.base_url), timeout=180, max_retries=3)
+            self._llm = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3)
         return self
 
     # @retry(tries=3, jitter=(60, 120))
@@ -260,7 +260,7 @@ class RemoteDigestor(DigestorBase):
         return results
 
 
-class NamedEntityExtractor(DigestorBase):
+class EntityExtractor:
     model_path: str
     confidence = 0.5
     _splitter = None
@@ -297,14 +297,19 @@ class NamedEntityExtractor(DigestorBase):
         "stockticker": "stock_tickers",
         "product": "products",
     }   
+    _GLINER_BATCH_SIZE = int(os.getenv("GLINER_BATCH_SIZE", 16))
     _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 4))
-    _TOKEN_MARGIN = 32
+    _TOKEN_MARGIN = 16
     _MIN_SIZE = 100
 
     def __init__(self, model_path: str, context_len: int = 4096, threshold=0.5) -> None:
-        super().__init__(model_name=model_path, context_len=context_len, system_prompt=None, input_template=None, output_model=None)
+        # super().__init__(model_name=model_path, context_len=context_len, instruction=None, input_template=None, output_model=None)
+        self.model_name = model_path
+        self.context_len = context_len
         self.threshold = threshold
+        self._llm = None
         self._label_embeddings = None        
+        self._splitter = None
     
     def __enter__(self):
         if not self._llm:
@@ -323,22 +328,24 @@ class NamedEntityExtractor(DigestorBase):
             )
             self._splitter = TokenTextSplitter(
                 chunk_size=self.context_len - self._TOKEN_MARGIN,
-                chunk_overlap=0,
+                chunk_overlap=self._TOKEN_MARGIN,
                 include_metadata=False,
                 include_prev_next_rel=False,
             )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._label_embeddings is not None:
+        if self._llm:
+            del self._llm
+            self._llm = None
+        if self._label_embeddings:
             del self._label_embeddings
             self._label_embeddings = None
+        if self._splitter:
             del self._splitter
-            self._splitter = None
-        return super().__exit__(exc_type, exc_val, exc_tb)
-
-    def create_prompt(self, msg: str):
-        return msg
+            self._splitter = None        
+        clear_gpu_cache()
+        return False    
 
     def parse_output(self, response):
         res = defaultdict(list)
@@ -389,66 +396,38 @@ class NamedEntityExtractor(DigestorBase):
             labels_embeddings=self._label_embeddings,
             labels=self._LABELS,
             threshold=self.threshold,
-            batch_size=16,
+            batch_size=self._GLINER_BATCH_SIZE,
         )
         digests = [self.parse_output(group) if group else None for group in entities]        
         return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
 
 
-# ---------------------
-# AGENT UTILITIES
-# ---------------------
-
-DIGEST_SYS = """
-TASK=EXTRACT digest_fields FROM content IF specified
-RULES=
-exclude:unspecified data, implied assessments, assumptions
-remove:N/A,null values, empty fields
-avoid:markdown,prose,code_fences,null_placeholders,implied_information,assumptions
-RESPONSE=JSON object matching schema
-{schema}
-"""
-DIGEST_INST = """DETERMINE digest_fields FROM content IF specified\n=== content ===\n{input_text}"""
-
-BRIEFING_SYS = """
-TASK=CREATE intelligence_signal FROM EventStream
-RULES=
-grounding:normative,multi_events,strict_tracing
-phrasing:structured,dynamic,specific,granular,direct
-tone:informative,objective,concrete,analytical,data_driven
-avoid:clickbait,sensationalism,ambiguity,vagueness,generic_phrasing,speculative_narrative,emotive_language
-RESPONSE=JSON object matching schema
-{schema}
-"""
-BRIEFING_INST = "CREATE intelligence_signal FROM EventStream\n\n{input_text}"
-
-def create_digestor(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, system_template: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> DigestorBase:
-    sys_prompt = system_template.format(schema=output_model.model_text_schema()) if system_template and output_model else None
+def create_micro_agent(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, instruction: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> MicroAgentBase:
     if model_path.startswith(VLLM_PREFIX):
-        return VLLMDigestor(
+        return VLLMMicroAgent(
             model_path.removeprefix(VLLM_PREFIX),
             context_len=context_len,
-            system_prompt=sys_prompt,
+            instruction=instruction,
             input_template=input_template,
             output_model=output_model,
             **kwargs,
         )
     elif kwargs.get("base_url") and kwargs.get("api_key"):
-        return RemoteDigestor(
+        return RemoteMicroAgent(
             model_path,
             base_url=kwargs.pop("base_url"),
             api_key=kwargs.pop("api_key"),
             context_len=context_len,
-            system_prompt=sys_prompt,
+            instruction=instruction,
             input_template=input_template,
             output_model=output_model,
             **kwargs,
         )
     else:
-        return TransformerDigestor(
+        return TransformerMicroAgent(
             model_path, 
             context_len=context_len, 
-            system_prompt=sys_prompt,
+            instruction=instruction,
             input_template=input_template,
             output_model=output_model, 
             **kwargs

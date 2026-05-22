@@ -31,7 +31,7 @@ class EmbedderBase(ABC):
     context_len: int = None
     tokenizer_fn = None
 
-    _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 4))
+    _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 8))
     _SPECIAL_TOKEN_MARGIN = 8  # BOS/EOS/CLS/SEP overhead; chunk_size = context_len - this
     _OVERLAP_MARGIN = 20  # to ensure that we don't lose important context when merging chunk embeddings
 

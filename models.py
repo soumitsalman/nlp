@@ -14,11 +14,11 @@ class Digest(BaseModel):
     products: List[str] = Field(default_factory=list, description="List of specified names products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. exclude_pattern=N products.")
     companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. exclude_pattern=N companies.")
     stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. ex: TSLA, GLD, NVDA etc.")    
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords. ex: agentic_ai,sovereign_compute,defense_tech etc.")
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. ex: agentic_ai,sovereign_compute,defense_tech etc.")
     
     # intelligence
     briefing: Optional[str] = Field(default=None, description="Intelligence briefing. Format=[WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
-    key_events: List[str] = Field(
+    events: List[str] = Field(
         default_factory=list,
         description=(
             "Sequences of key facts,events,datapoints for intelligence briefing. "
@@ -556,14 +556,14 @@ class FinancialDocumentSummary(Digest):
 
 
 class Briefing(BaseModel):
-    """Intelligence briefing for a given events stream."""       
+    """Intelligence briefing from a stream of events."""       
     # intelligence
-    briefing: str = Field(description="One liner intelligence briefing. Format: [WHEN] — [WHO] [ACTION/WHAT] [TARGET/OBJECT] in/at [WHERE] using/via [HOW], resulting in [IMPACT]")
+    briefing: str = Field(description="One liner intelligence briefing. Include: when, who, action/what, target/object, in/at, where, using/via, how, result/impact. ")
     events: list[str] = Field(
         default_factory=list,
         description=(
             "Sequence of events. "
-            "Format: [TIME][ACTOR][ACTION][OBJECT][CONTEXT/HOW][IMMEDIATE RESULT][FOLLOW-ON EFFECT][IMPACT]. "
+            "Include: time, actor, action, object, context/how, result/impact. "
             "ex: 2026-05-19: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
         )
     )
@@ -572,7 +572,7 @@ class Briefing(BaseModel):
     impacted_domains: list[str] = Field(description="List of domains impacted by the events sequence.")
     impact_level: str = Field(description="Overall impact level. ALLOWED: null, low, medium, high, critical, transformative")
     forecast: str = Field(description="One-liner forecast and short-term implication of the events sequence.")
-    tags: list[str] = Field(description="List of search tags")
+    tags: list[str] = Field(description="List of search kyewords/phrases")
 
     def model_post_init(self, __context):
         if self.impacted_domains: self.impacted_domains = valid_tags(self.impacted_domains)
@@ -601,6 +601,9 @@ class Briefing(BaseModel):
 
 _UNDETERMINED = {"n/a", "na", "none", "unmentioned", "not mentioned", "unspecified", "undetermined", "not specified", "not found"}
 _MAX_NAME_LEN = 40
+
+_snake = lambda s: re.sub(r'_+', '_', textcase.snake(s)).strip('_')
+
 def cleanup_names(items: list[str]):
     """Remove leading/trailing non-alphanumeric characters, filter out empty and undetermined values, and deduplicate while preserving original casing of first occurrence."""
     if not items: return items
@@ -619,10 +622,10 @@ def valid_impact_or_risk(val: Optional[str]):
 
 def valid_tags(items: str|list[str]):
     """Converts the tags into snake_case"""
-    return list(map(textcase.snake, cleanup_names(items)))
+    return list(map(_snake, cleanup_names(items)))
 
 def valid_context_tag(tag: str):
-    tag = textcase.snake(tag)
+    tag = _snake(tag)
     if len(tag) <= _MAX_NAME_LEN and tag not in _UNDETERMINED:
         return tag
 
