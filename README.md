@@ -1,33 +1,37 @@
-# Coffeemaker — Embeddings & Simple Agent Utilities
+# NLP — Embeddings & Micro-Agents
 
-Lightweight NLP utilities for Coffeemaker:
+Lightweight NLP utilities for [Pycoffeemaker](../README.md):
 
 - **Embeddings** — vectorize text for retrieval and semantic search
-- **Digests** — structured extraction (entities, events, briefing fields) via Pydantic models
+- **Micro-agents** — structured extraction (entities, events, briefing fields) via Pydantic schemas
 - **Named entities** — GLiNER-based extraction (`EntityExtractor`)
 
-Public API: `create_embedder`, `create_digestor`, `Digest`, `Briefing`, and backend classes (see `__init__.py`).
+Public API (see `__init__.py`): `create_embedder`, `create_micro_agent`, `Digest`, `Briefing`, `EntityExtractor`, and selected backend classes.
 
 ## Package layout
 
 ```
 nlp/
-├── __init__.py          # exports: create_embedder, create_digestor, Digest, …
+├── __init__.py          # exports: create_embedder, create_micro_agent, Digest, …
 ├── embedders.py         # EmbedderBase + backends; create_embedder()
-├── agents.py         # DigestorBase + backends; create_digestor(); markdown/compressed parsers
+├── agents.py            # MicroAgentBase + backends; create_micro_agent(); EntityExtractor
 ├── models.py            # Digest, Briefing, domain-specific digest schemas
 ├── utils.py             # model-path prefixes, run_batch helper
 ├── requirements.txt
 ├── tests/
-│   ├── test.py          # embedder / digestor / NER smoke tests
+│   ├── test.py          # embedder / micro-agent / NER smoke tests
 │   ├── texts-for-nlp.json
 │   └── text-for-generator.json
-└── deprecated/          # legacy agents, agents, prompts (not used by current API)
+└── deprecated/          # legacy digestors, prompts (not used by current API)
 ```
 
 ## Installation
 
+From the repo root (so `nlp` is on `PYTHONPATH`):
+
 ```bash
+pip install -r nlp/requirements.txt
+# or full stack:
 pip install -r requirements.txt
 ```
 
@@ -52,23 +56,23 @@ with embedder:
     qvec = embedder.embed_query("What will change in developer tooling?")  # list[float]
 ```
 
-### Digest (structured JSON via Pydantic)
+### Structured extraction (micro-agent)
 
 ```python
-from nlp import create_digestor, Digest
+from nlp import create_micro_agent, Digest
 
 article = "Long article text to summarize and extract intelligence from..."
 
-digestor = create_digestor(
+agent = create_micro_agent(
     model_path="LiquidAI/LFM2.5-1.2B-Instruct",
-    context_len=4096,
+    context_len=32768,
     instruction="Extract structured intelligence per the schema.",
     input_template="{msg}",
     output_model=Digest,
 )
 
-with digestor:
-    results = digestor.run_batch([article])
+with agent:
+    results = agent.run_batch([article])
 
 digest = results[0]
 print(digest.model_dump())
@@ -77,37 +81,36 @@ print(digest.model_dump())
 #### Batching
 
 ```python
-with digestor:
-    digests = digestor.run_batch([article, article])  # list[Digest | None]
+with agent:
+    digests = agent.run_batch([article, article])  # list[Digest | None]
 ```
 
 ### Named entity extraction
 
 ```python
-from nlp.agents import EntityExtractor
-from nlp import Digest
+from nlp import EntityExtractor
 
 with EntityExtractor(
     "knowledgator/modern-gliner-bi-base-v1.0",
     context_len=4096,
     threshold=0.4,
 ) as extractor:
-    entities = extractor.run_batch([article])
+    entities = extractor.run_batch([article])  # list[Digest | None]
 ```
 
 ## Backend selection
 
-`create_embedder` / `create_digestor` pick a backend from the model path (and optional remote credentials).
+`create_embedder` / `create_micro_agent` pick a backend from the model path (and optional remote credentials).
 
 | Prefix / signal | Backend | Use case |
 |-----------------|---------|----------|
-| (none) | `TransformerEmbeddings` / `TransformerDigestor` | HuggingFace Hub or local path |
-| `onnx://` | `ORTEmbeddings` | ONNX Runtime (embeddings) |
-| `openvino://` | `OVEmbeddings` | OpenVINO (embeddings) |
-| `llamacpp://` | `LlamaCppEmbeddings` | llama.cpp GGUF (embeddings) |
-| `vllm://` | `VLLMEmbedder` / `VLLMDigestor` | vLLM batched inference |
+| (none) | `TransformerEmbeddings` / `TransformerMicroAgent` | HuggingFace Hub or local path |
+| `onnx://` | `ORTEmbeddings` | ONNX Runtime (embeddings only) |
+| `openvino://` | `OVEmbeddings` | OpenVINO (embeddings only) |
+| `llamacpp://` | `LlamaCppEmbeddings` | llama.cpp GGUF (embeddings only) |
+| `vllm://` | `VLLMEmbedder` / `VLLMMicroAgent` | vLLM batched inference |
 | `infinity://` | `InfinityEmbeddings` | `infinity_emb` in-process embeddings |
-| `base_url` (+ `api_key` for agents) | `RemoteEmbeddings` / `RemoteDigestor` | OpenAI-compatible HTTP API |
+| `base_url` + `api_key` (kwargs) | `RemoteEmbeddings` / `RemoteMicroAgent` | OpenAI-compatible HTTP API |
 
 Prefix constants live in `utils.py`.
 
@@ -132,13 +135,13 @@ create_embedder(
     api_key="sk-...",
 )
 
-# Remote digestor (requires both base_url and api_key)
-create_digestor(
-    model_path="gpt-4o-mini",
-    context_len=8192,
-    output_model=Digest,
-    base_url="https://api.openai.com/v1",
-    api_key="sk-...",
+# Remote micro-agent (requires both base_url and api_key)
+create_micro_agent(
+    model_path="openai/gpt-oss-20b",
+    context_len=32768,
+    output_model=Briefing,
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key="nvapi-...",
 )
 ```
 
@@ -151,24 +154,49 @@ create_digestor(
 - `embed_query(query)` → `list[float]`
 - Use as context manager: `with embedder:`
 
-**`create_digestor(model_path, context_len=32768, instruction=None, input_template=None, output_model=Digest, **kwargs)`** → `DigestorBase`
+**`create_micro_agent(model_path, context_len=32768, instruction=None, input_template=None, output_model=Digest, **kwargs)`** → `MicroAgentBase`
 
 - `run_batch(list[str])` → `list[BaseModel | None]` (type depends on `output_model`)
 - Remote backend: pass `base_url` and `api_key` in `kwargs`
-- Use as context manager: `with digestor:`
+- `vllm://` prefix selects `VLLMMicroAgent`
+- Use as context manager: `with agent:`
+
+**`EntityExtractor(model_path, context_len=4096, threshold=0.5)`** — separate from micro-agents; maps GLiNER labels into `Digest` fields via `run_batch`.
 
 ## Return types
 
 - Embeddings: `list[float]` or `list[list[float]]`
-- Digests: Pydantic models (`Digest`, `Briefing`, or domain subclasses in `models.py`) when `output_model` is set; `None` if parsing fails
-- Legacy markdown/compressed parsers: `parse_markdown`, `parse_compressed` in `agents.py`
+- Micro-agents: Pydantic models (`Digest`, `Briefing`, or domain subclasses in `models.py`) when `output_model` is set; `None` if parsing fails
+- Legacy markdown/compressed parsers: `parse_markdown`, `parse_compressed` in `agents.py` (also used internally when `output_model` is unset)
+
+## Coffeemaker integration
+
+`workers/analyzerorch.py` wires this package into the pipeline:
+
+| Worker mode | NLP API |
+|-------------|---------|
+| `EMBEDDER` | `create_embedder` |
+| `EXTRACTOR` | `EntityExtractor` |
+| `DIGESTOR`, `CONSOLIDATOR` | `create_micro_agent` + `Digest` / `Briefing` |
 
 ## Implementation notes
 
 - Embedder backends: `embedders.py` (`RemoteEmbeddings`, `LlamaCppEmbeddings`, `TransformerEmbeddings`, `OVEmbeddings`, `ORTEmbeddings`, `VLLMEmbedder`, `InfinityEmbeddings`)
-- Digestor backends: `agents.py` (`TransformerDigestor`, `VLLMDigestor`, `RemoteDigestor`, `EntityExtractor`)
-- Schemas and domain variants: `models.py` (`Digest`, `Briefing`, `AINewsDigest`, `FinancialMarketsNewsSummary`, …)
-- Tests: `tests/test.py` (run from repo root with `nlp` on `PYTHONPATH`)
+- Micro-agent backends: `agents.py` (`TransformerMicroAgent`, `VLLMMicroAgent`, `RemoteMicroAgent`)
+- NER: `agents.py` (`EntityExtractor`)
+- Schemas: `models.py` (`Digest`, `Briefing`, `AINewsDigest`, `FinancialMarketsNewsSummary`, …)
+
+### Tests
+
+```bash
+# from repo root
+PYTHONPATH=. python nlp/tests/test.py
+
+# or from nlp/ (tests add parent to sys.path)
+cd nlp && python tests/test.py
+```
+
+Uncomment `test_digestor`, `test_extractor`, etc. in `tests/test.py` as needed.
 
 ## Contribution
 
