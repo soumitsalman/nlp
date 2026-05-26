@@ -338,10 +338,8 @@ class EntityExtractor:
         if self._llm:
             del self._llm
             self._llm = None
-        if self._label_embeddings:
             del self._label_embeddings
-            self._label_embeddings = None
-        if self._splitter:
+            self._label_embeddings = None        
             del self._splitter
             self._splitter = None        
         clear_gpu_cache()
