@@ -243,6 +243,12 @@ class RemoteMicroAgent(MicroAgentBase):
             self._llm = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=180, max_retries=3)
         return self
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._llm:
+            del self._llm
+            self._llm = None
+        return False
+
     # @retry(tries=3, jitter=(60, 120))
     def _run_single(self, msg: str) -> BaseModel:
         response = self._llm.chat.completions.parse(
