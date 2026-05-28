@@ -1,3 +1,7 @@
+__author__ = "Soumit Salman Rahman"
+__license__ = "MIT"
+__version__ = "1.0.0"
+
 __all__ = [   
     'Digest', "Briefing",
     'create_embedder','EmbedderBase', 'RemoteEmbeddings', 'TransformerEmbeddings', 'VLLMEmbeddings', 'InfinityEmbeddings',
