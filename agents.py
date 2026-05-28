@@ -249,7 +249,7 @@ class RemoteMicroAgent(MicroAgentBase):
             self._llm = None
         return False
 
-    # @retry(tries=3, jitter=(60, 120))
+    @retry(tries=3, jitter=(60, 180))
     def _run_single(self, msg: str) -> BaseModel:
         response = self._llm.chat.completions.parse(
             model=self.model_name,
