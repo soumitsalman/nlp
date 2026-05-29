@@ -10,7 +10,7 @@ openai
 llama-index
 tiktoken
 numpy
-retry
+tenacity
 pydantic
 icecream
 textcase

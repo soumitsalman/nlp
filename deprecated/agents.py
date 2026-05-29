@@ -4,7 +4,7 @@ import base64
 import os
 import logging
 from typing import Callable
-from retry import retry
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_fixed
 from abc import ABC, abstractmethod
 from .utils import *
 from icecream import ic
@@ -327,7 +327,12 @@ class TextGeneratorAgent(LMAgentBase):
             }
         ]
 
-    @retry(tries=3, delay=5, logger=log)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_fixed(5),
+        before_sleep=before_sleep_log(log, logging.WARNING),
+        reraise=True,
+    )
     def run(self, input_msg: str):
         if self.max_input_tokens: input_msg = truncate(input_msg, self.max_input_tokens)
         response = self.client.run(self.make_prompt(input_msg), json_mode=self.json_mode)

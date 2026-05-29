@@ -5,7 +5,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain
-from retry import retry
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_random
 from .utils import *
 from icecream import ic
 
@@ -116,7 +116,7 @@ class RemoteEmbeddings(EmbedderBase):
         self.model_name = model_name
         self.context_len = context_len    
        
-    @retry(tries=2, delay=5, logger=log)
+    @retry(stop=stop_after_attempt(REMOTE_RETRY_COUNT), wait=wait_random(*REMOTE_RETRY_JITTER), reraise=True)
     def _embed(self, texts):
         embeddings = self.model_client.embeddings.create(model=self.model_name, input=texts, encoding_format="float")
         return [data.embedding for data in embeddings.data]    

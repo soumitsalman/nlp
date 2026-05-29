@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Optional, Type
 from pydantic import BaseModel
-from retry import retry
+from tenacity import retry, stop_after_attempt, wait_random
 from .models import *
 from .utils import *
 from icecream import ic
@@ -249,7 +249,7 @@ class RemoteMicroAgent(MicroAgentBase):
             self._llm = None
         return False
 
-    @retry(tries=3, jitter=(60, 180))
+    @retry(stop=stop_after_attempt(REMOTE_RETRY_COUNT), wait=wait_random(*REMOTE_RETRY_JITTER), reraise=True)
     def _run_single(self, msg: str) -> BaseModel:
         response = self._llm.chat.completions.parse(
             model=self.model_name,
