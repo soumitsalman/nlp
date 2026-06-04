@@ -9,28 +9,24 @@ class Digest(BaseModel):
     """Main digest/key points of an article/news/blog/report"""
 
     # keywords
-    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. ex: USA,EU,China etc. exclude_pattern=N countries.")
+    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. examples: USA,EU,China etc. exclude_pattern=N countries.")
     people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. exclude_pattern=N leaders.")
-    products: List[str] = Field(default_factory=list, description="List of specified names products/services. ex: iPhone 17,Tesla Model S,Codex 5 etc. exclude_pattern=N products.")
-    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. ex: Microsoft,Nvidia,SpaceX etc. exclude_pattern=N companies.")
-    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. ex: TSLA, GLD, NVDA etc.")    
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. ex: agentic_ai,sovereign_compute,defense_tech etc.")
+    products: List[str] = Field(default_factory=list, description="List of specified names products/services. examples: iPhone 17,Tesla Model S,Codex 5 etc. exclude_pattern=N products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. examples: Microsoft,Nvidia,SpaceX etc. exclude_pattern=N companies.")
+    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. examples: TSLA, GLD, NVDA etc.")    
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. examples: agentic_ai,sovereign_compute,defense_tech etc.")
     
     # intelligence
     briefing: Optional[str] = Field(default=None, description="Intelligence briefing. Include: when, who, action/what, target/object, in/at, where, using/via, how, result/impact.")
-    events: List[str] = Field(
+    actions: List[str] = Field(
         default_factory=list,
-        description=(
-            "List of key events,datapoints for intelligence briefing. "
-            "Include: time, actor, action, object, context/how, result/impact/effect. "
-            "ex: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
-        )
+        description="List of key actions,events,datapoints for intelligence briefing. Include: time, actor, action, target/object, context/how, result/impact/effect."
     )        
     macro_context: Optional[str] = Field(
         None,
         description=(
             "Primary geopolitical,trade,economic or technological context driving the events. Length<=5words. "
-            "ex: us_iran_conflict, red_sea_disruption, tariff_volatility, rare_earth_controls, arctic_shipping_rivalry, africa_mineral_conflict, cyber_arms_race_escalation etc."
+            "examples: us_iran_conflict, red_sea_disruption, tariff_volatility, rare_earth_controls, arctic_shipping_rivalry, africa_mineral_conflict, cyber_arms_race_escalation etc."
         ),
     )
     # "model_release, agent_launch, enterprise_adoption_case, safety_regulation_update, multimodal_breakthrough\n"
