@@ -196,7 +196,14 @@ class VLLMMicroAgent(MicroAgentBase):
             from vllm import LLM, SamplingParams
             from vllm.sampling_params import StructuredOutputsParams
 
-            self._llm = LLM(model=self.model_name)
+            self._llm = LLM(
+                model=self.model_name,
+                max_model_len=self.context_len,
+                gpu_memory_utilization=0.88,
+                enforce_eager=True,
+                language_model_only=True,
+                attention_config={"backend": "TRITON_ATTN"},
+            )
             self._sampling_params = SamplingParams(
                 **self.sampling_params,
                 stop=["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
