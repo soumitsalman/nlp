@@ -405,14 +405,16 @@ class EntityExtractor:
         return list(chain(*chunks)), start_idx, counts
 
     def _merge_chunks(self, entities: list[Entities]):
-        return Entities(
-            regions=list(set(chain(*[e.regions for e in entities]))),
-            people=list(set(chain(*[e.people for e in entities]))),
-            products=list(set(chain(*[e.products for e in entities]))),
-            companies=list(set(chain(*[e.companies for e in entities]))),
-            stock_tickers=list(set(chain(*[e.stock_tickers for e in entities]))),
-            tags=list(set(chain(*[e.tags for e in entities]))),
-        )
+        entities = [e for e in entities if e]
+        if entities:
+            return Entities(
+                regions=list(set(chain(*[e.regions for e in entities if e.regions]))),
+                people=list(set(chain(*[e.people for e in entities if e.people]))),
+                products=list(set(chain(*[e.products for e in entities if e.products]))),
+                companies=list(set(chain(*[e.companies for e in entities if e.companies]))),
+                stock_tickers=list(set(chain(*[e.stock_tickers for e in entities if e.stock_tickers]))),
+                tags=list(set(chain(*[e.tags for e in entities if e.tags]))),
+            )
 
     def run_batch(self, input_messages: list[str]):
         chunks, start_idx, counts = self._create_chunks(input_messages)
