@@ -7,83 +7,15 @@ from pydantic import BaseModel, Field
 
 class Entities(BaseModel):
     # keywords
-    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. examples: USA,EU,China etc. exclude_pattern=N countries.")
+    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. exclude_pattern=N countries.")
     people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. exclude_pattern=N leaders.")
-    products: List[str] = Field(default_factory=list, description="List of specified names products/services. examples: iPhone 17,Tesla Model S,Codex 5 etc. exclude_pattern=N products.")
-    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. examples: Microsoft,Nvidia,SpaceX etc. exclude_pattern=N companies.")
-    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. examples: TSLA, GLD, NVDA etc.")    
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. examples: agentic_ai,sovereign_compute,defense_tech etc.")
-
-
-class Digest(Entities):
-    """Main digest/key points of an article/news/blog/report"""
-    # intelligence
-    
-    actions: List[str] = Field(
-        default_factory=list,
-        description=(
-            "List of atomic factual events+datapoints for intelligence briefing. "
-            "Include: Time/date, actor, action/event, effect/result, impacted/affected entities, key metrics/comparison if specified."
-        )
-    )
-    # "model_release, agent_launch, enterprise_adoption_case, safety_regulation_update, multimodal_breakthrough\n"
-    # "ransomware_attack, zero_day_disclosure, supply_chain_breach, ai_enhanced_exploit, state_sponsored_campaign\n"
-    # "chip_launch, platform_announcement, chip_shortage, foundry_partnership\n"
-    # "humanoid_demo, warehouse_deployment, drone_swarm_test, regulation_change\n"
-    # "series_a, acquisition_announced, merger_completed, strategic_partnership, ipo_filing\n"
-    # "earnings_beat, stock_reaction, analyst_upgrade, sector_rotation, sec_filing_update\n"
-    # "route_disruption, freight_rate_spike, aircraft_order, supply_chain_bottleneck, cyber_incident_on_cargo\n"
-    # "oil_price_shock, gdp_forecast_revision, inflation_spike, rate_cut_signal, commodity_demand_shift\n"
-    event_type: Optional[str] = Field(
-        None,
-        description=(
-            "Primary aggregated event type. Length<=3words. "
-            # "Examples: "
-            # "Model release, "
-            # "Ransomware attack, "
-            # "Chip launch, "
-            # "Warehouse deployment, "
-            # "IPO filing, "
-            # "Freight rate spike, "
-            # "GDP forecast revision ..."
-        ),
-    )
-    impact_level: Optional[str] = Field(
-        None,
-        description="Specified impact of the events on primary domain/context. "
-        "ALLOWED: null, low, medium, high, critical, transformative",
-    )
-    cross_domain_impacts: List[str] = Field(
-        default_factory=list,
-        description=(
-            "List of secondary domains and associated impacts. "
-            "Format=Domain: 1 sentence impact. "
-            # "Examples:\n"
-            # "- Cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
-            # "- Aviation: Flight delays and cancellations due to air traffic control issues\n"
-            # "- Hardware: Supply chain disruptions affecting chip production\n"
-            # "- Startups: Emerging companies facing funding challenges\n"
-        ),
-    )     
-    macro_context: str = Field(
-        ...,
-        description=(
-            "Primary geopolitical,trade,economic or technological context driving the events. Length<=4words. "
-            # "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."
-        ),
-    )      
-    future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory ONLY if mentioned.")
-    briefing: str = Field(
-        ...,
-        description=(
-            "Intelligence briefing of the events. Length<=2 sentences. "
-            "Include: Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons if specified. "
-            "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
-        ),
-    )
+    products: List[str] = Field(default_factory=list, description="List of specified names products/services. exclude_pattern=N products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. exclude_pattern=N companies.")
+    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. exclude_pattern=N stock tickers.")    
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. exclude_pattern=N tags.")
 
     def model_post_init(self, __context):
-        cleanup_digest_fields(self, __context)
+        cleanup_fields(self, __context)
 
     @classmethod
     def model_text_schema(cls):
@@ -109,6 +41,54 @@ class Digest(Entities):
 
     def __str__(self):
         return text_value(self)
+
+
+class Digest(Entities):
+    """Main digest/key points of an article/news/blog/report"""    
+    actions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "List of atomic factual event/datapoint sentences. "
+            "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
+            "Avoid angle brackets, labels, semicolon lists, or field:value fragments."
+        ),
+    )
+    # "model_release, agent_launch, enterprise_adoption_case, safety_regulation_update, multimodal_breakthrough\n"
+    # "ransomware_attack, zero_day_disclosure, supply_chain_breach, ai_enhanced_exploit, state_sponsored_campaign\n"
+    # "chip_launch, platform_announcement, chip_shortage, foundry_partnership\n"
+    # "humanoid_demo, warehouse_deployment, drone_swarm_test, regulation_change\n"
+    # "series_a, acquisition_announced, merger_completed, strategic_partnership, ipo_filing\n"
+    # "earnings_beat, stock_reaction, analyst_upgrade, sector_rotation, sec_filing_update\n"
+    # "route_disruption, freight_rate_spike, aircraft_order, supply_chain_bottleneck, cyber_incident_on_cargo\n"
+    # "oil_price_shock, gdp_forecast_revision, inflation_spike, rate_cut_signal, commodity_demand_shift\n"
+    event_type: Optional[str] = Field(None, description="Primary aggregated event type(<=3words) or null if not decipherable. ")
+    impact_level: Optional[str] = Field(
+        None,
+        description="Specified impact of the events on primary domain/context. "
+        "ALLOWED: null, low, medium, high, critical, transformative",
+    )
+    # "Examples:\n"
+    # "- Cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
+    # "- Aviation: Flight delays and cancellations due to air traffic control issues\n"
+    # "- Hardware: Supply chain disruptions affecting chip production\n"
+    # "- Startups: Emerging companies facing funding challenges\n"
+    cross_domain_impacts: List[str] = Field(
+        default_factory=list,
+        description="List of secondary domains and associated impacts. Template= <Domain>: <Impact(1-sentence)>",
+    )
+    # "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."     
+    macro_context: str = Field(..., description="Primary geopolitical,trade,economic or technological context driving the events(<=4words) or null if not decipherable. ")
+    future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory or null if not specified. ")
+    briefing: str = Field(
+        ...,
+        description=(
+            "Intelligence briefing of the events (<=2sentences). "
+            "Include Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
+            "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
+        ),
+    )
+
+    
 
 # ────────────────────────────────────────────────
 # Domain-specific models (inherit from base)
@@ -564,51 +544,35 @@ class FinancialDocumentSummary(Digest):
     )
 
 
-class Briefing(BaseModel):
-    """Intelligence briefing from a stream of events."""       
-    # intelligence
-    briefing: str = Field(description="One liner intelligence briefing. Include: when, who, action/what, target/object, in/at, where, using/via, how, result/impact. ")
+class Briefing(Entities):
+    """Intelligence briefing from a stream of events."""           
     events: list[str] = Field(
         default_factory=list,
         description=(
-            "Sequence of related events. "
-            "Include: time, actor, action, object, context/how, result/impact/effect. "
-            "ex: 2026-05-19: US markets dropped 9.3% from all-time highs → selling pressure accelerated across tech and financial sectors → a 3-day selloff unfolded."
+            "Chronological sequence of related events. "
+            "Format per item: YYYY-MM-DD Actor verb object/effect/result with metric/context if available. "
+            "Plain sentence. Avoid arrows, labels, angle brackets, or field:value fragments."
         )
     )
-    drivers: list[str] = Field(description="Primary macro context and causal chain driving or leading to the events")
-    impacts: list[str] = Field(description="List of observed impacts of the events sequence.")
+    drivers: list[str] = Field(description="Plain causal sentences explaining what drove the sequence. Avoid labels or chain-of-thought.")
+    impacts: list[str] = Field(description="Plain observed impact sentences with affected party and measurable effect where available. Avoid labels or speculation.")
     impacted_domains: list[str] = Field(description="List of domains impacted by the events sequence.")
     impact_level: str = Field(description="Overall impact level. ALLOWED: null, low, medium, high, critical, transformative")
-    forecast: str = Field(description="One-liner forecast and short-term implication of the events sequence.")
-    tags: list[str] = Field(description="List of search kyewords/phrases")
+    forecast: str = Field(description="One plain short-term forecast sentence grounded in observed impacts. Avoid hedged narrative or reasoning trace.")
+    briefing: str = Field(
+        description=(
+            "Intelligence briefing of the events (<=3sentences). "
+            "Include Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
+            "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
+        )
+    )
 
-    def model_post_init(self, __context):
-        if self.impacted_domains: self.impacted_domains = valid_tags(self.impacted_domains)
-        if self.impact_level: self.impact_level = valid_impact_or_risk(self.impact_level)
-        if self.tags: self.tags = valid_tags(self.tags)
-
-    def model_dump(self, **kwargs):
-        defaults = {
-            "exclude_none": True,
-            "exclude_unset": True,
-            "exclude_defaults": True,
-        }
-        kwargs = {**defaults, **kwargs}
-        return super().model_dump(**kwargs)
-
-    @classmethod
-    def model_text_schema(cls):
-        return model_text_schema(cls)
-
-    def __str__(self):
-        return text_value(self)        
 
 # ────────────────────────────────────────────────
 # Post initialization cleanup
 # ────────────────────────────────────────────────
 
-_UNDETERMINED = {"n/a", "na", "none", "unmentioned", "not mentioned", "unspecified", "undetermined", "not specified", "not found"}
+_UNDETERMINED = {"n/a", "na", "none", "unmentioned", "not mentioned", "unspecified", "undetermined", "not specified", "not found", "null"}
 _MAX_NAME_LEN = 40
 
 _snake = lambda s: re.sub(r'_+', '_', textcase.snake(s)).strip('_')
@@ -638,20 +602,26 @@ def valid_context_tag(tag: str):
     if len(tag) <= _MAX_NAME_LEN and tag not in _UNDETERMINED:
         return tag
 
+def valid_future_outlook(outlook: str):
+    if outlook and outlook.lower() not in _UNDETERMINED:
+        return outlook
+
 _CLEANUP_FUNCTIONS = {
     "regions": valid_tags,
     "people": valid_tags,
     "products": valid_tags,
-    "companies": valid_tags,
-    "stock_tickers": valid_stock_tickers,    
+    "companies": valid_tags,    
     "entities": valid_tags,
     "tags": valid_tags,
+    "stock_tickers": valid_stock_tickers,    
     "macro_context": valid_context_tag,
     "event_type": valid_context_tag,
     "impact_level": valid_impact_or_risk,
+    "future_outlook": valid_future_outlook,
+    "forecast": valid_future_outlook,
 }
 
-def cleanup_digest_fields(digest, __context):
+def cleanup_fields(digest, __context):
     for field, cleanup_func in _CLEANUP_FUNCTIONS.items():
         if val := getattr(digest, field, None):
             setattr(digest, field, cleanup_func(val))

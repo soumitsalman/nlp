@@ -206,30 +206,18 @@ Uncomment `test_digestor`, `test_extractor`, etc. in `tests/test.py` as needed.
 ---
 ## APPENDIX: Content Generation Models Evaluation
 
-### Digest & Summary Generation
 
-| Model | Rating | Cost | Key Notes |
-|-------|--------|------|-----------|
-| `meta-llama/Llama-4-Scout-17B-16E-Instruct` | ⭐ Very Good | ~$0.10/M | Balanced size & quality, well-structured summaries, maintains tone |
-| `nvidia/Llama-3.1-Nemotron-70B-Instruct` | ⭐ Very Good | ~$0.12/M | High-quality digests, strong instruction following |
-| `NovaSky-AI/Sky-T1-32B-Preview` | ⭐ Good | ~$0.12/M | Decent performance, good for structured outputs |
-| `google/gemma-3-27b-it` | ⭐ Good | ~$0.10/M | Bullet points, translates well, tone preservation (high cost relative to quality) |
-| `meta-llama/Meta-Llama-3-8B-Instruct` | ⭐ Good | ~$0.03/M | Bullet points, some filler text, best cost-to-quality ratio |
-| `mistralai/Mistral-Small-24B-Instruct-2501` | ❌ Poor | – | Verbose, poor tone/style preservation |
-| `mistralai/Mistral-Nemo-Instruct-2407` | ❌ Poor | – | Excessive verbosity, poor translation |
-| `microsoft/Phi-4-multimodal-instruct` | ❌ Poor | – | Low quality output |
-| `Qwen/Qwen2.5-7B-Instruct` | ❌ Poor | – | Poor translation, weak multilingual support |
-| `google/gemini-1.5-flash` | ❌ Poor | – | No bullet points, poor tone preservation |
-| `meta-llama/Llama-3.2-3B-Instruct` | ❌ Poor | – | Excessively verbose |
-| `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` | ❌ Poor | – | Excessively verbose |
-| `Gryphe/MythoMax-L2-13b` | ❌ Poor | – | Low quality output |
-
-### Local Models (Self-Hosted)
+### Local Models for Summarization, Extraction, Small Scale Reasoning
 
 | Model Category | Recommendation | Notes |
 |---|---|---|
-| `soumitsr/led-base-article-digestor` (Seq2Seq) | ⭐ Preferred | Better efficiency, control over format, ideal for on-device |
-| `soumitsr/SmolLM2-360M-Instruct-article-digestor` (Decoder) | ⭐ Preferred | Better efficiency, control over format, ideal for on-device |
+| `Qwen/Qwen3.5-4B` | ⭐⭐⭐ Great (Digestor & Consolidator) | Thinker by default. Non-thinking mode is better for Digestor. Great context window 256K |
+| `Qwen/Qwen3.5-9B` | ⭐⭐⭐ Great (Digestor & Consolidator) | Thinker by default. Better for Consolidator although slower than 4B, Great context window 256K |
+| `LiquidAI/LFM2.5-1.2B-Instruct` | ⭐⭐ Good (Digestor) | Good for non-thinking extraction. Issues: Won't recommend for reasoning, Occational failure in structured output, Small context window 32K |
+| `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16` | ⭐⭐ Very Good (Digestor) | Good output structure adherence, Good context window 128K, Great search tag generation, Slightly worse content quality than Qwen3.5-4B |
+| `soumitsr/led-base-article-digestor` (Seq2Seq) | ⭐ Decent (Digestor ONLY) | Better efficiency, control over format. DEPRECATED |
+| `soumitsr/SmolLM2-360M-Instruct-article-digestor` (Decoder) | ⭐ Decent (Digestor ONLY) | Better efficiency, control over format, ideal for on-device. DEPRECATED |
+
 
 ### Article & Content Generation
 

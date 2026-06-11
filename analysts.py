@@ -43,6 +43,7 @@ class TextAnalystBase(ABC):
         self.input_template = input_template
         self.output_model = output_model
         self.response_mode = "json" if output_model else None
+        self.enable_thinking = sampling_params.pop("enable_thinking", False)
         self.sampling_params = {
             **DEFAULT_SAMPLING_PARAMS,
             **sampling_params,
@@ -110,16 +111,16 @@ class LocalTokenizer:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.end_think_token_id = ic(self.tokenizer.convert_tokens_to_ids("</think>"))
 
-
-    def tokenize_prompts(self, prompts):
+    def tokenize_prompts(self, prompts, enable_thinking: bool = False):
         return self.tokenizer.apply_chat_template(
             prompts,
             padding=True,
             truncation=True,
             max_length=self.context_len,
             return_tensors="pt",
+            return_dict=True,
             add_generation_prompt=True,
-            enable_thinking=True
+            enable_thinking=enable_thinking
         ).to(self.device)
 
     def decode(self, tokens, input_tokens = None):
@@ -199,7 +200,7 @@ class TransformerTextAnalyst(TextAnalystBase):
 
     def _run_batch(self, prompts, **kwargs):
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
-            input_tokens = self._tokenizer.tokenize_prompts(prompts)
+            input_tokens = self._tokenizer.tokenize_prompts(prompts, self.enable_thinking)
             output_tokens = self._llm.generate(**input_tokens, do_sample=True, **self._sampling_params)
             generated_texts = self._tokenizer.batch_decode(output_tokens, input_tokens)
         return generated_texts
@@ -219,7 +220,10 @@ class VLLMTextAnalyst(TextAnalystBase):
 
             self._llm = LLM(
                 model=self.model_name,
-                gpu_memory_utilization=0.95,
+                max_model_len=self.context_len,
+                gpu_memory_utilization=0.99,
+                language_model_only=True,
+                trust_remote_code=True
             )
             self._sampling_params = SamplingParams(
                 **self.sampling_params,
@@ -231,7 +235,7 @@ class VLLMTextAnalyst(TextAnalystBase):
         return self
 
     def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
-        responses = self._llm.chat([self.create_prompt(msg) for msg in input_messages], sampling_params=self._sampling_params, use_tqdm=False)
+        responses = self._llm.chat([self.create_prompt(msg) for msg in input_messages], sampling_params=self._sampling_params, use_tqdm=False, chat_template_kwargs={"enable_thinking": self.enable_thinking})
         return [self.parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
 
 
@@ -260,6 +264,8 @@ class RemoteTextAnalyst(TextAnalystBase):
         self.sampling_params.pop('top_k', None)
         self.sampling_params.pop('repetition_penalty', None)
         self._sampling_params = {k:v for k, v in self.sampling_params.items() if k not in ["top_k", "repetition_penalty"] or not v}
+        if self.enable_thinking:
+            self._sampling_params["extra_body"] = {"reasoning_budget": self.context_len, "chat_template_kwargs": {"enable_thinking": self.enable_thinking}}
 
     def __enter__(self):
         if not self._llm:
@@ -423,6 +429,9 @@ class EntityExtractor:
 
 def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, instruction: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> TextAnalystBase:
     if model_path.startswith(VLLM_PREFIX):
+        # remove these two if they exist
+        kwargs.pop('base_url', None) 
+        kwargs.pop('api_key', None)
         return VLLMTextAnalyst(
             model_path.removeprefix(VLLM_PREFIX),
             context_len=context_len,
@@ -443,6 +452,8 @@ def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN,
             **kwargs,
         )
     else:
+        kwargs.pop('base_url', None) 
+        kwargs.pop('api_key', None)
         return TransformerTextAnalyst(
             model_path, 
             context_len=context_len, 
