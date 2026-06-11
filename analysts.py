@@ -220,8 +220,6 @@ class VLLMTextAnalyst(TextAnalystBase):
             self._llm = LLM(
                 model=self.model_name,
                 gpu_memory_utilization=0.95,
-                language_model_only=True,
-                attention_config={"backend": "TRITON_ATTN"},
             )
             self._sampling_params = SamplingParams(
                 **self.sampling_params,

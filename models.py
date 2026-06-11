@@ -38,14 +38,14 @@ class Digest(Entities):
         None,
         description=(
             "Primary aggregated event type. Length<=3words. "
-            "Examples: "
-            "Model release, "
-            "Ransomware attack, "
-            "Chip launch, "
-            "Warehouse deployment, "
-            "IPO filing, "
-            "Freight rate spike, "
-            "GDP forecast revision ..."
+            # "Examples: "
+            # "Model release, "
+            # "Ransomware attack, "
+            # "Chip launch, "
+            # "Warehouse deployment, "
+            # "IPO filing, "
+            # "Freight rate spike, "
+            # "GDP forecast revision ..."
         ),
     )
     impact_level: Optional[str] = Field(
@@ -58,25 +58,25 @@ class Digest(Entities):
         description=(
             "List of secondary domains and associated impacts. "
             "Format=Domain: 1 sentence impact. "
-            "Examples:\n"
-            "- Cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
-            "- Aviation: Flight delays and cancellations due to air traffic control issues\n"
-            "- Hardware: Supply chain disruptions affecting chip production\n"
-            "- Startups: Emerging companies facing funding challenges\n"
+            # "Examples:\n"
+            # "- Cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
+            # "- Aviation: Flight delays and cancellations due to air traffic control issues\n"
+            # "- Hardware: Supply chain disruptions affecting chip production\n"
+            # "- Startups: Emerging companies facing funding challenges\n"
         ),
     )     
     macro_context: str = Field(
         ...,
         description=(
             "Primary geopolitical,trade,economic or technological context driving the events. Length<=4words. "
-            "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."
+            # "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."
         ),
     )      
     future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory ONLY if mentioned.")
     briefing: str = Field(
         ...,
         description=(
-            "1-3 sentences intelligence briefing. "
+            "Intelligence briefing of the events. Length<=2 sentences. "
             "Include: Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons if specified. "
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         ),
