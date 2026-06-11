@@ -5,9 +5,7 @@ import re
 import textcase
 from pydantic import BaseModel, Field
 
-class Digest(BaseModel):
-    """Main digest/key points of an article/news/blog/report"""
-
+class Entities(BaseModel):
     # keywords
     regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. examples: USA,EU,China etc. exclude_pattern=N countries.")
     people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. exclude_pattern=N leaders.")
@@ -15,19 +13,18 @@ class Digest(BaseModel):
     companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. examples: Microsoft,Nvidia,SpaceX etc. exclude_pattern=N companies.")
     stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. examples: TSLA, GLD, NVDA etc.")    
     tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. examples: agentic_ai,sovereign_compute,defense_tech etc.")
-    
+
+
+class Digest(Entities):
+    """Main digest/key points of an article/news/blog/report"""
     # intelligence
-    briefing: Optional[str] = Field(default=None, description="Intelligence briefing. Include: when, who, action/what, target/object, in/at, where, using/via, how, result/impact.")
+    
     actions: List[str] = Field(
         default_factory=list,
-        description="List of key actions,events,datapoints for intelligence briefing. Include: time, actor, action, target/object, context/how, result/impact/effect."
-    )        
-    macro_context: Optional[str] = Field(
-        None,
         description=(
-            "Primary geopolitical,trade,economic or technological context driving the events. Length<=5words. "
-            "examples: us_iran_conflict, red_sea_disruption, tariff_volatility, rare_earth_controls, arctic_shipping_rivalry, africa_mineral_conflict, cyber_arms_race_escalation etc."
-        ),
+            "List of atomic factual events+datapoints for intelligence briefing. "
+            "Include: Time/date, actor, action/event, effect/result, impacted/affected entities, key metrics/comparison if specified."
+        )
     )
     # "model_release, agent_launch, enterprise_adoption_case, safety_regulation_update, multimodal_breakthrough\n"
     # "ransomware_attack, zero_day_disclosure, supply_chain_breach, ai_enhanced_exploit, state_sponsored_campaign\n"
@@ -40,15 +37,15 @@ class Digest(BaseModel):
     event_type: Optional[str] = Field(
         None,
         description=(
-            "Primary aggregated event_type/resultant. "
+            "Primary aggregated event type. Length<=3words. "
             "Examples: "
-            "model_release, agent_launch, regulation_update, multimodal_breakthrough, "
-            "ransomware_attack, zero_day_disclosure, supply_chain_breach, "
-            "chip_launch, platform_announcement, "
-            "humanoid_demo, warehouse_deployment, "
-            "series_a, acquisition_announced, ipo_filing, "
-            "route_disruption, freight_rate_spike, supply_chain_bottleneck, "
-            "oil_price_shock, gdp_forecast_revision, rate_cut_signal etc."
+            "Model release, "
+            "Ransomware attack, "
+            "Chip launch, "
+            "Warehouse deployment, "
+            "IPO filing, "
+            "Freight rate spike, "
+            "GDP forecast revision ..."
         ),
     )
     impact_level: Optional[str] = Field(
@@ -59,15 +56,31 @@ class Digest(BaseModel):
     cross_domain_impacts: List[str] = Field(
         default_factory=list,
         description=(
-            "List of secondary domains and associated impacts. Format=[domain]:[impact;1 sentence]. "
+            "List of secondary domains and associated impacts. "
+            "Format=Domain: 1 sentence impact. "
             "Examples:\n"
-            "- cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
-            "- aviation: Flight delays and cancellations due to air traffic control issues\n"
-            "- hardware: Supply chain disruptions affecting chip production\n"
-            "- startups: Emerging companies facing funding challenges\n"
+            "- Cybersecurity: Increased risk of data breaches due to new vulnerabilities\n"
+            "- Aviation: Flight delays and cancellations due to air traffic control issues\n"
+            "- Hardware: Supply chain disruptions affecting chip production\n"
+            "- Startups: Emerging companies facing funding challenges\n"
         ),
-    )    
-    future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory.")
+    )     
+    macro_context: str = Field(
+        ...,
+        description=(
+            "Primary geopolitical,trade,economic or technological context driving the events. Length<=4words. "
+            "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."
+        ),
+    )      
+    future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory ONLY if mentioned.")
+    briefing: str = Field(
+        ...,
+        description=(
+            "1-3 sentences intelligence briefing. "
+            "Include: Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons if specified. "
+            "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
+        ),
+    )
 
     def model_post_init(self, __context):
         cleanup_digest_fields(self, __context)

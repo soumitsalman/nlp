@@ -1,13 +1,13 @@
 __author__ = "Soumit Salman Rahman"
 __license__ = "MIT"
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 __all__ = [   
-    'Digest', "Briefing",
+    'Entities', 'Digest', 'Briefing',
     'create_embedder','EmbedderBase', 'RemoteEmbeddings', 'TransformerEmbeddings', 'VLLMEmbeddings', 'InfinityEmbeddings',
-    'create_micro_agent', 'MicroAgentBase', 'TransformerMicroAgent', 'VLLMMicroAgent', 'RemoteMicroAgent', 'EntityExtractor',
+    'create_text_analyst', 'TextAnalystBase', 'TransformerTextAnalyst', 'VLLMTextAnalyst', 'RemoteTextAnalyst', 'EntityExtractor',
 ]
 
 from .embedders import *
-from .agents import *
+from .analysts import *
 from .models import *

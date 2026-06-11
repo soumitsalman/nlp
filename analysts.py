@@ -27,7 +27,7 @@ DEFAULT_SAMPLING_PARAMS = {
 }
 DEFAULT_CONTEXT_LEN = 32768
 
-class MicroAgentBase(ABC):
+class TextAnalystBase(ABC):
     def __init__(
         self,
         model_name: str,
@@ -65,8 +65,9 @@ class MicroAgentBase(ABC):
 
     def create_prompt(self, msg: str):
         prompt = []
+        input_text = msg[:self.context_len>>1] # this is a heuristic
         if self.instruction: prompt.append({"role": "system", "content": self.instruction})
-        prompt.append({"role": "user", "content": self.input_template.format(input_text=msg) if self.input_template else msg})
+        prompt.append({"role": "user", "content": self.input_template.format(description=self.output_model.model_text_schema(), input_text=input_text) if self.input_template else input_text})
         return prompt
 
     def parse_output(self, response: str):
@@ -98,30 +99,28 @@ class LocalTokenizer:
         self,
         model_id,
         context_len: int,
-        device: str = None,
+        device: str,
     ):
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id, max_length=context_len, use_fast=True
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id, max_length=context_len, use_fast=True, trust_remote_code=True, padding_side="left")
         self.context_len = context_len
         self.device = device
         if not self.tokenizer.pad_token:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.end_think_token_id = ic(self.tokenizer.convert_tokens_to_ids("</think>"))
+
 
     def tokenize_prompts(self, prompts):
-        tokens = self.tokenizer.apply_chat_template(
+        return self.tokenizer.apply_chat_template(
             prompts,
             padding=True,
             truncation=True,
             max_length=self.context_len,
             return_tensors="pt",
             add_generation_prompt=True,
-        )
-        if self.device:
-            tokens = tokens.to(self.device)
-        return tokens
+            enable_thinking=True
+        ).to(self.device)
 
     def decode(self, tokens, input_tokens = None):
         if input_tokens is not None:
@@ -130,7 +129,11 @@ class LocalTokenizer:
 
     def batch_decode(self, tokens, input_tokens = None):
         if input_tokens is not None:
-            tokens = [out_tokens[len(in_tokens):] for out_tokens, in_tokens in zip(tokens, input_tokens)]
+            prompt_len = input_tokens["input_ids"].shape[1]
+            tokens = tokens[:, prompt_len:]
+        # TODO: if end_think_token_id is in tokens, remove the tokens before it
+        if self.end_think_token_id and self.end_think_token_id > 0 and self.end_think_token_id in tokens:
+            tokens = tokens[:, tokens == self.end_think_token_id]
         return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
 
     @property
@@ -144,21 +147,39 @@ class LocalTokenizer:
 
 # needs 1.3 for repetition penalty support, and max_new_tokens = 384
 # "no_repeat_ngram_size": 3,
-class TransformerMicroAgent(MicroAgentBase):
+class TransformerTextAnalyst(TextAnalystBase):
     _tokenizer = None
                 
     def __enter__(self):
         if not self._llm:
             from transformers import AutoModelForCausalLM
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            dtype = torch.bfloat16
-            self._llm = AutoModelForCausalLM.from_pretrained(self.model_name, dtype=dtype, device_map=device).to(device)
-            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, device)
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.dtype = (
+                torch.bfloat16
+                if self.device == "cuda" and torch.cuda.is_bf16_supported()
+                else torch.float16
+                if self.device == "cuda"
+                else torch.float32
+            )
+            self._llm = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                dtype=self.dtype,
+                device_map=self.device,
+                trust_remote_code=True,
+            )
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
             self._sampling_params = {(k if k!= "max_tokens" else "max_new_tokens"): v for k, v in self.sampling_params.items()}
 
             if self.response_mode == "json":
                 from lmformatenforcer import JsonSchemaParser
+                from importlib import import_module
+                from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+                tokenization_utils = import_module("transformers.tokenization_utils")
+                if not hasattr(tokenization_utils, "PreTrainedTokenizerBase"):
+                    tokenization_utils.PreTrainedTokenizerBase = PreTrainedTokenizerBase
+
                 from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
                 
                 parser = JsonSchemaParser(self.output_model.model_json_schema())
@@ -179,7 +200,7 @@ class TransformerMicroAgent(MicroAgentBase):
     def _run_batch(self, prompts, **kwargs):
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
             input_tokens = self._tokenizer.tokenize_prompts(prompts)
-            output_tokens = self._llm.generate(input_tokens, do_sample=True, **self._sampling_params)
+            output_tokens = self._llm.generate(**input_tokens, do_sample=True, **self._sampling_params)
             generated_texts = self._tokenizer.batch_decode(output_tokens, input_tokens)
         return generated_texts
 
@@ -190,7 +211,7 @@ class TransformerMicroAgent(MicroAgentBase):
         return [self.parse_output(text) for text in generated_texts]
 
 
-class VLLMMicroAgent(MicroAgentBase):
+class VLLMTextAnalyst(TextAnalystBase):
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
@@ -198,9 +219,7 @@ class VLLMMicroAgent(MicroAgentBase):
 
             self._llm = LLM(
                 model=self.model_name,
-                max_model_len=self.context_len,
-                gpu_memory_utilization=0.88,
-                enforce_eager=True,
+                gpu_memory_utilization=0.95,
                 language_model_only=True,
                 attention_config={"backend": "TRITON_ATTN"},
             )
@@ -218,7 +237,7 @@ class VLLMMicroAgent(MicroAgentBase):
         return [self.parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
 
 
-class RemoteMicroAgent(MicroAgentBase):
+class RemoteTextAnalyst(TextAnalystBase):
     def __init__(
         self,
         model_name: str,
@@ -256,7 +275,7 @@ class RemoteMicroAgent(MicroAgentBase):
             self._llm = None
         return False
 
-    @retry(stop=stop_after_attempt(REMOTE_RETRY_COUNT), wait=wait_random(*REMOTE_RETRY_JITTER), reraise=True)
+    # @retry(stop=stop_after_attempt(REMOTE_RETRY_COUNT), wait=wait_random(*REMOTE_RETRY_JITTER), reraise=True)
     def _run_single(self, msg: str) -> BaseModel:
         response = self._llm.chat.completions.parse(
             model=self.model_name,
@@ -364,7 +383,7 @@ class EntityExtractor:
             res[self._LABEL_FIELD_MAPPINGS[ent["label"]]].append(ent["text"])
         for k, v in res.items():
             res[k] = list({item.lower(): item for item in v}.values())
-        return Digest(**res)
+        return Entities(**res)
 
     def _split(self, text: str):
         chunks = self._splitter.split_text(text)[:self._MAX_CHUNKS]
@@ -381,23 +400,14 @@ class EntityExtractor:
             start_idx[i] = start_idx[i-1]+counts[i-1]
         return list(chain(*chunks)), start_idx, counts
 
-    def _merge_chunks(self, digests: list[Digest]):
-        to_merge = [digest for digest in digests if digest]
-        if not to_merge: return
-
-        people, companies, regions, stock_tickers, products = set(), set(), set(), set(), set()
-        for digest in to_merge:
-            if digest.regions: regions.update(digest.regions)
-            if digest.people: people.update(digest.people)
-            if digest.products: products.update(digest.products)
-            if digest.companies: companies.update(digest.companies)
-            if digest.stock_tickers: stock_tickers.update(digest.stock_tickers)
-        return Digest(
-            people=list(people), 
-            companies=list(companies), 
-            regions=list(regions), 
-            stock_tickers=list(stock_tickers), 
-            products=list(products)
+    def _merge_chunks(self, entities: list[Entities]):
+        return Entities(
+            regions=list(set(chain(*[e.regions for e in entities]))),
+            people=list(set(chain(*[e.people for e in entities]))),
+            products=list(set(chain(*[e.products for e in entities]))),
+            companies=list(set(chain(*[e.companies for e in entities]))),
+            stock_tickers=list(set(chain(*[e.stock_tickers for e in entities]))),
+            tags=list(set(chain(*[e.tags for e in entities]))),
         )
 
     def run_batch(self, input_messages: list[str]):
@@ -409,13 +419,13 @@ class EntityExtractor:
             threshold=self.threshold,
             batch_size=self._GLINER_BATCH_SIZE,
         )
-        digests = [self.parse_output(group) if group else None for group in entities]        
-        return [self._merge_chunks(digests[start:start+count]) for start, count in zip(start_idx, counts)]
+        entities = [self.parse_output(group) if group else None for group in entities]        
+        return [self._merge_chunks(entities[start:start+count]) for start, count in zip(start_idx, counts)]
 
 
-def create_micro_agent(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, instruction: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> MicroAgentBase:
+def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, instruction: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> TextAnalystBase:
     if model_path.startswith(VLLM_PREFIX):
-        return VLLMMicroAgent(
+        return VLLMTextAnalyst(
             model_path.removeprefix(VLLM_PREFIX),
             context_len=context_len,
             instruction=instruction,
@@ -424,7 +434,7 @@ def create_micro_agent(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, 
             **kwargs,
         )
     elif kwargs.get("base_url") and kwargs.get("api_key"):
-        return RemoteMicroAgent(
+        return RemoteTextAnalyst(
             model_path,
             base_url=kwargs.pop("base_url"),
             api_key=kwargs.pop("api_key"),
@@ -435,7 +445,7 @@ def create_micro_agent(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, 
             **kwargs,
         )
     else:
-        return TransformerMicroAgent(
+        return TransformerTextAnalyst(
             model_path, 
             context_len=context_len, 
             instruction=instruction,
