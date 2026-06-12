@@ -82,11 +82,11 @@ class Digest(Entities):
         ...,
         description=(
             "Intelligence briefing of the events (<=2sentences). "
-            "Include Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
+            "Include time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         ),
     )
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. exclude_pattern=N tags.")
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. Count<=10. exclude_pattern=N tags.")
     
 
 # ────────────────────────────────────────────────

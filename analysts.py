@@ -239,6 +239,9 @@ class TransformerTextAnalyst(TextAnalystBase):
         return [self.parse_output(text) for text in generated_texts]
 
 
+VLLM_MAX_NUM_BATCHED_TOKENS = int(os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", 16384))
+VLLM_MAX_NUM_SEQS = int(os.getenv("VLLM_MAX_NUM_SEQS", 128))
+VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0.99))
 class VLLMTextAnalyst(TextAnalystBase):
     def __enter__(self):
         if not self._llm:
@@ -248,9 +251,9 @@ class VLLMTextAnalyst(TextAnalystBase):
             self._llm = LLM(
                 model=self.model_name,
                 max_model_len=self.context_len,
-                max_num_seq=self.batch_size,
-                max_num_batched_tokens=self.batch_size*self.context_len,
-                gpu_memory_utilization=0.99,
+                max_num_seqs=VLLM_MAX_NUM_SEQS,
+                max_num_batched_tokens=VLLM_MAX_NUM_BATCHED_TOKENS,
+                gpu_memory_utilization=VLLM_GPU_MEMORY_UTILIZATION,
                 enable_prefix_caching=True,
                 enable_chunked_prefill=True,
                 language_model_only=True,
@@ -269,9 +272,9 @@ class VLLMTextAnalyst(TextAnalystBase):
     def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
         responses = self._llm.chat(
             [self.create_prompt(msg) for msg in input_messages], 
-            sampling_params=self._sampling_params,             
-            chat_template_kwargs={"enable_thinking": self.enable_thinking},
-            truncate_prompt_tokens=self.max_prompt_len,
+            sampling_params=self.sampling_params,             
+            chat_template_kwargs={"enable_thinking": self.enable_thinking} if self.enable_thinking else None,
+            tokenization_kwargs={"truncate_prompt_tokens": self.max_prompt_len},
             use_tqdm=False, 
         )
         return [self.parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
