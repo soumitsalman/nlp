@@ -13,6 +13,8 @@ NUM_THREADS = os.cpu_count()
 REMOTE_RETRY_COUNT = 3
 REMOTE_RETRY_JITTER = (60, 180)
 
+TOKEN_MARGIN = 16
+
 _ALLOWED_SPECIAL_TOKENS = {
     "<|endoftext|>",
     "<|im_start|>",

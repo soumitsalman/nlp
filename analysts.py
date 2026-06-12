@@ -18,23 +18,25 @@ log = logging.getLogger("digestor")
 try: import torch
 except: log.warning("PyTorch Not Available", extra={'source': __file__, 'num_items': 1})
 
-DEFAULT_SAMPLING_PARAMS = {
-    "temperature": 0.2,
+_DEFAULT_SAMPLING_PARAMS = {
+    "temperature": 0.5,
     "top_k": 50,
     "top_p": 1.0,
     "repetition_penalty": 1.15,
-    "max_tokens": 2048
 }
-DEFAULT_CONTEXT_LEN = 32768
+# DEFAULT_CONTEXT_LEN = 32768
 
 class TextAnalystBase(ABC):
     def __init__(
         self,
         model_name: str,
-        context_len: int,
+        context_len: int,        
         instruction: str,
         input_template: str,
         output_model: Type[BaseModel],
+        enable_thinking: bool,
+        max_new_tokens: int,
+        batch_size: int,
         **sampling_params,
     ):
         self.model_name = model_name
@@ -43,13 +45,16 @@ class TextAnalystBase(ABC):
         self.input_template = input_template
         self.output_model = output_model
         self.response_mode = "json" if output_model else None
-        self.enable_thinking = sampling_params.pop("enable_thinking", False)
+        self.enable_thinking = enable_thinking
+        self.max_new_tokens = max_new_tokens
+        self.max_prompt_len = context_len - max_new_tokens - TOKEN_MARGIN
+        self.batch_size = batch_size
         self.sampling_params = {
-            **DEFAULT_SAMPLING_PARAMS,
+            **_DEFAULT_SAMPLING_PARAMS,
             **sampling_params,
         }
         self._llm = None
-        self._sampling_params = None
+        # self._sampling_params = None
 
     @abstractmethod
     def __enter__(self):
@@ -59,16 +64,22 @@ class TextAnalystBase(ABC):
         if self._llm:
             del self._llm
             self._llm = None
-            del self._sampling_params
-            self._sampling_params = None
+            # del self._sampling_params
+            # self._sampling_params = None
             clear_gpu_cache()
         return False
 
     def create_prompt(self, msg: str):
-        prompt = []
-        input_text = msg[:self.context_len>>1] # this is a heuristic
+        prompt = []        
+        input_text = msg[:self.max_prompt_len<<2] # this is a heuristic
         if self.instruction: prompt.append({"role": "system", "content": self.instruction})
-        prompt.append({"role": "user", "content": self.input_template.format(description=self.output_model.model_text_schema(), input_text=input_text) if self.input_template else input_text})
+        prompt.append({
+            "role": "user", 
+            "content": self.input_template.format(
+                description=self.output_model.model_text_schema(), 
+                input_text=input_text
+            ) if self.input_template else input_text
+        })
         return prompt
 
     def parse_output(self, response: str):
@@ -101,40 +112,53 @@ class LocalTokenizer:
         model_id,
         context_len: int,
         device: str,
+        max_prompt_len: int,
+        enable_thinking: bool,
     ):
         from transformers import AutoTokenizer
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, max_length=context_len, use_fast=True, trust_remote_code=True, padding_side="left")
         self.context_len = context_len
-        self.device = device
+        self.device = device        
         if not self.tokenizer.pad_token:
             self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.end_think_token_id = ic(self.tokenizer.convert_tokens_to_ids("</think>"))
+        self.end_think_token_id = self.tokenizer.convert_tokens_to_ids("</think>")
+        self.max_prompt_len = max_prompt_len
+        self.enable_thinking = enable_thinking
 
-    def tokenize_prompts(self, prompts, enable_thinking: bool = False):
+    def tokenize_prompts(self, prompts):
         return self.tokenizer.apply_chat_template(
             prompts,
             padding=True,
             truncation=True,
-            max_length=self.context_len,
+            max_length=self.max_prompt_len,
             return_tensors="pt",
             return_dict=True,
             add_generation_prompt=True,
-            enable_thinking=enable_thinking
+            enable_thinking=self.enable_thinking
         ).to(self.device)
+
+    def _strip_after_thinking(self, tokens):
+        if not self.end_think_token_id or self.end_think_token_id <= 0:
+            return tokens
+        matches = (tokens == self.end_think_token_id).nonzero(as_tuple=True)[0]
+        if matches.numel():
+            return tokens[matches[0] + 1:]
+        return tokens
 
     def decode(self, tokens, input_tokens = None):
         if input_tokens is not None:
-            tokens = tokens[len(input_tokens):]
+            prompt_len = input_tokens["input_ids"].shape[1]
+            tokens = tokens[prompt_len:]
+        tokens = self._strip_after_thinking(tokens)
         return self.tokenizer.decode(tokens, skip_special_tokens=True)
 
     def batch_decode(self, tokens, input_tokens = None):
         if input_tokens is not None:
             prompt_len = input_tokens["input_ids"].shape[1]
             tokens = tokens[:, prompt_len:]
-        # TODO: if end_think_token_id is in tokens, remove the tokens before it
-        if self.end_think_token_id and self.end_think_token_id > 0 and self.end_think_token_id in tokens:
-            tokens = tokens[:, tokens == self.end_think_token_id]
+        if self.end_think_token_id and self.end_think_token_id > 0 and (tokens == self.end_think_token_id).any():
+            tokens = [self._strip_after_thinking(row) for row in tokens]
         return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
 
     @property
@@ -169,8 +193,11 @@ class TransformerTextAnalyst(TextAnalystBase):
                 device_map=self.device,
                 trust_remote_code=True,
             )
-            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device)
-            self._sampling_params = {(k if k!= "max_tokens" else "max_new_tokens"): v for k, v in self.sampling_params.items()}
+            self._tokenizer = LocalTokenizer(self.model_name, self.context_len, self.device, self.max_prompt_len, self.enable_thinking)
+            self.sampling_params.update({
+                "max_new_tokens": self.max_new_tokens,
+                "do_sample": True,
+            })
 
             if self.response_mode == "json":
                 from lmformatenforcer import JsonSchemaParser
@@ -200,8 +227,8 @@ class TransformerTextAnalyst(TextAnalystBase):
 
     def _run_batch(self, prompts, **kwargs):
         with torch.inference_mode(), torch.amp.autocast(self.device, self.dtype):
-            input_tokens = self._tokenizer.tokenize_prompts(prompts, self.enable_thinking)
-            output_tokens = self._llm.generate(**input_tokens, do_sample=True, **self._sampling_params)
+            input_tokens = self._tokenizer.tokenize_prompts(prompts)
+            output_tokens = self._llm.generate(**input_tokens, **self.sampling_params)
             generated_texts = self._tokenizer.batch_decode(output_tokens, input_tokens)
         return generated_texts
 
@@ -221,12 +248,17 @@ class VLLMTextAnalyst(TextAnalystBase):
             self._llm = LLM(
                 model=self.model_name,
                 max_model_len=self.context_len,
+                max_num_seq=self.batch_size,
+                max_num_batched_tokens=self.batch_size*self.context_len,
                 gpu_memory_utilization=0.99,
+                enable_prefix_caching=True,
+                enable_chunked_prefill=True,
                 language_model_only=True,
-                trust_remote_code=True
+                trust_remote_code=True,
             )
-            self._sampling_params = SamplingParams(
+            self.sampling_params = SamplingParams(
                 **self.sampling_params,
+                max_tokens=self.max_new_tokens,
                 stop=["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
                 structured_outputs=StructuredOutputsParams(
                     json=self.output_model.model_json_schema()
@@ -235,7 +267,13 @@ class VLLMTextAnalyst(TextAnalystBase):
         return self
 
     def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
-        responses = self._llm.chat([self.create_prompt(msg) for msg in input_messages], sampling_params=self._sampling_params, use_tqdm=False, chat_template_kwargs={"enable_thinking": self.enable_thinking})
+        responses = self._llm.chat(
+            [self.create_prompt(msg) for msg in input_messages], 
+            sampling_params=self._sampling_params,             
+            chat_template_kwargs={"enable_thinking": self.enable_thinking},
+            truncate_prompt_tokens=self.max_prompt_len,
+            use_tqdm=False, 
+        )
         return [self.parse_output(resp.outputs[0].text) if resp.outputs else None for resp in responses]
 
 
@@ -249,6 +287,9 @@ class RemoteTextAnalyst(TextAnalystBase):
         instruction: str,
         input_template: str,
         output_model: Type[BaseModel],
+        enable_thinking: bool,
+        max_new_tokens: int,
+        batch_size: int,
         **sampling_params,
     ):
         super().__init__(
@@ -257,15 +298,19 @@ class RemoteTextAnalyst(TextAnalystBase):
             instruction=instruction,
             input_template=input_template,
             output_model=output_model,
+            enable_thinking=enable_thinking,
+            max_new_tokens=max_new_tokens,
+            batch_size=batch_size,
             **sampling_params,
         )
         self.base_url = base_url
         self.api_key = api_key
         self.sampling_params.pop('top_k', None)
         self.sampling_params.pop('repetition_penalty', None)
-        self._sampling_params = {k:v for k, v in self.sampling_params.items() if k not in ["top_k", "repetition_penalty"] or not v}
+        self.sampling_params["max_completion_tokens"] = self.max_new_tokens
         if self.enable_thinking:
-            self._sampling_params["extra_body"] = {"reasoning_budget": self.context_len, "chat_template_kwargs": {"enable_thinking": self.enable_thinking}}
+            self.sampling_params["extra_body"] = {"reasoning_budget": self.context_len, "chat_template_kwargs": {"enable_thinking": self.enable_thinking}}
+        
 
     def __enter__(self):
         if not self._llm:
@@ -279,19 +324,19 @@ class RemoteTextAnalyst(TextAnalystBase):
             self._llm = None
         return False
 
-    # @retry(stop=stop_after_attempt(REMOTE_RETRY_COUNT), wait=wait_random(*REMOTE_RETRY_JITTER), reraise=True)
+    @retry(stop=stop_after_attempt(REMOTE_RETRY_COUNT), wait=wait_random(*REMOTE_RETRY_JITTER), reraise=True)
     def _run_single(self, msg: str) -> BaseModel:
         response = self._llm.chat.completions.parse(
             model=self.model_name,
             messages=self.create_prompt(msg),
             response_format=self.output_model,
-            **self._sampling_params
+            **self.sampling_params
         )
         return response.choices[0].message.parsed
         
     def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
         if not self._llm: self.__enter__()
-        with ThreadPoolExecutor(max_workers=len(input_messages)) as exec:
+        with ThreadPoolExecutor(max_workers=self.batch_size) as exec:
             results = list(exec.map(self._run_single, input_messages))
         return results
 
@@ -333,16 +378,13 @@ class EntityExtractor:
         "stockticker": "stock_tickers",
         "product": "products",
     }   
-    _GLINER_BATCH_SIZE = int(os.getenv("GLINER_BATCH_SIZE", 16))
-    _MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", 4))
-    _TOKEN_MARGIN = 16
-    _MIN_SIZE = 100
-
-    def __init__(self, model_path: str, context_len: int = 4096, threshold=0.5) -> None:
+        
+    def __init__(self, model_path: str, context_len: int, threshold=0.5, batch_size: int = 16) -> None:
         # super().__init__(model_name=model_path, context_len=context_len, instruction=None, input_template=None, output_model=None)
         self.model_name = model_path
         self.context_len = context_len
         self.threshold = threshold
+        self.batch_size = batch_size
         self._llm = None
         self._label_embeddings = None        
         self._splitter = None
@@ -363,8 +405,8 @@ class EntityExtractor:
                 self._LABELS, batch_size=len(self._LABELS)
             )
             self._splitter = TokenTextSplitter(
-                chunk_size=self.context_len - self._TOKEN_MARGIN,
-                chunk_overlap=self._TOKEN_MARGIN,
+                chunk_size=self.context_len - TOKEN_MARGIN,
+                chunk_overlap=TOKEN_MARGIN<<1,
                 include_metadata=False,
                 include_prev_next_rel=False,
             )
@@ -390,15 +432,16 @@ class EntityExtractor:
         return Entities(**res)
 
     def _split(self, text: str):
-        chunks = self._splitter.split_text(text)[:self._MAX_CHUNKS]
-        if len(chunks) > 1 and len(chunks[-1]) < self._MIN_SIZE: chunks = chunks[:-1]
+        chunks = self._splitter.split_text(text)
+        if len(chunks) > 1 and len(chunks[-1]) < (TOKEN_MARGIN<<2): chunks = chunks[:-1]
         return chunks
 
     def _create_chunks(self, texts: list[str]) -> tuple[list[str], list[int], list[int]]:
         texts = texts if isinstance(texts, list) else [texts]
         
         chunks = list(map(self._split, texts))
-        counts = list(map(len, chunks))
+        counts = list[int](map(len, chunks))
+
         start_idx = [0]*len(chunks)
         for i in range(1,len(counts)):
             start_idx[i] = start_idx[i-1]+counts[i-1]
@@ -423,13 +466,23 @@ class EntityExtractor:
             labels_embeddings=self._label_embeddings,
             labels=self._LABELS,
             threshold=self.threshold,
-            batch_size=self._GLINER_BATCH_SIZE,
+            batch_size=self.batch_size,
         )
         entities = [self.parse_output(group) if group else None for group in entities]        
         return [self._merge_chunks(entities[start:start+count]) for start, count in zip(start_idx, counts)]
 
 
-def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN, instruction: str = None, input_template: str = None, output_model: Type[BaseModel] = Digest, **kwargs) -> TextAnalystBase:
+def create_text_analyst(
+    model_path: str, 
+    context_len: int, 
+    instruction: str = None, 
+    input_template: str = None, 
+    output_model: Type[BaseModel] = Digest, 
+    enable_thinking: bool = False, 
+    max_new_tokens: int = 2048, 
+    batch_size: int = 32, 
+    **kwargs,
+) -> TextAnalystBase:
     if model_path.startswith(VLLM_PREFIX):
         # remove these two if they exist
         kwargs.pop('base_url', None) 
@@ -440,6 +493,9 @@ def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN,
             instruction=instruction,
             input_template=input_template,
             output_model=output_model,
+            enable_thinking=enable_thinking,
+            max_new_tokens=max_new_tokens,
+            batch_size=batch_size,
             **kwargs,
         )
     elif kwargs.get("base_url") and kwargs.get("api_key"):
@@ -451,6 +507,9 @@ def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN,
             instruction=instruction,
             input_template=input_template,
             output_model=output_model,
+            enable_thinking=enable_thinking,
+            max_new_tokens=max_new_tokens,
+            batch_size=batch_size,
             **kwargs,
         )
     else:
@@ -462,6 +521,9 @@ def create_text_analyst(model_path: str, context_len: int = DEFAULT_CONTEXT_LEN,
             instruction=instruction,
             input_template=input_template,
             output_model=output_model, 
+            enable_thinking=enable_thinking,
+            max_new_tokens=max_new_tokens,
+            batch_size=batch_size,
             **kwargs
         )
 
