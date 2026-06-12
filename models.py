@@ -12,8 +12,7 @@ class Entities(BaseModel):
     products: List[str] = Field(default_factory=list, description="List of specified names products/services. exclude_pattern=N products.")
     companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. exclude_pattern=N companies.")
     stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. exclude_pattern=N stock tickers.")    
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. exclude_pattern=N tags.")
-
+    
     def model_post_init(self, __context):
         cleanup_fields(self, __context)
 
@@ -87,7 +86,7 @@ class Digest(Entities):
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         ),
     )
-
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. exclude_pattern=N tags.")
     
 
 # ────────────────────────────────────────────────
@@ -566,6 +565,7 @@ class Briefing(Entities):
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         )
     )
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. exclude_pattern=N tags.")
 
 
 # ────────────────────────────────────────────────
