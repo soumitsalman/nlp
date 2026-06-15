@@ -457,7 +457,6 @@ class EntityExtractor:
                 products=list(set(chain(*[e.products for e in entities if e.products]))),
                 companies=list(set(chain(*[e.companies for e in entities if e.companies]))),
                 stock_tickers=list(set(chain(*[e.stock_tickers for e in entities if e.stock_tickers]))),
-                tags=list(set(chain(*[e.tags for e in entities if e.tags]))),
             )
 
     def run_batch(self, input_messages: list[str]):
