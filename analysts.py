@@ -49,12 +49,8 @@ class TextAnalystBase(ABC):
         self.max_new_tokens = max_new_tokens
         self.max_prompt_len = context_len - max_new_tokens - TOKEN_MARGIN
         self.batch_size = batch_size
-        self.sampling_params = {
-            **_DEFAULT_SAMPLING_PARAMS,
-            **sampling_params,
-        }
+        self.sampling_params = sampling_params
         self._llm = None
-        # self._sampling_params = None
 
     @abstractmethod
     def __enter__(self):
@@ -239,9 +235,9 @@ class TransformerTextAnalyst(TextAnalystBase):
         return [self.parse_output(text) for text in generated_texts]
 
 
-VLLM_MAX_NUM_BATCHED_TOKENS = int(os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", 16384))
-VLLM_MAX_NUM_SEQS = int(os.getenv("VLLM_MAX_NUM_SEQS", 128))
-VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0.95))
+VLLM_MAX_NUM_BATCHED_TOKENS = int(os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", 0))
+VLLM_MAX_NUM_SEQS = int(os.getenv("VLLM_MAX_NUM_SEQS", 0))
+VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0))
 VLLM_ATTENTION_BACKEND=os.getenv("VLLM_ATTENTION_BACKEND")
 
 class VLLMTextAnalyst(TextAnalystBase):
@@ -253,9 +249,9 @@ class VLLMTextAnalyst(TextAnalystBase):
             self._llm = LLM(
                 model=self.model_name,
                 max_model_len=self.context_len,
-                max_num_seqs=VLLM_MAX_NUM_SEQS,
-                max_num_batched_tokens=VLLM_MAX_NUM_BATCHED_TOKENS,
-                gpu_memory_utilization=VLLM_GPU_MEMORY_UTILIZATION,
+                max_num_seqs=VLLM_MAX_NUM_SEQS if VLLM_MAX_NUM_SEQS > 0 else None,
+                max_num_batched_tokens=VLLM_MAX_NUM_BATCHED_TOKENS if VLLM_MAX_NUM_BATCHED_TOKENS > 0 else None,
+                gpu_memory_utilization=VLLM_GPU_MEMORY_UTILIZATION if VLLM_GPU_MEMORY_UTILIZATION > 0 else None,
                 enable_prefix_caching=True,
                 enable_chunked_prefill=True,                
                 trust_remote_code=True,
