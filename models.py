@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 
 class Entities(BaseModel):
     # keywords
-    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. exclude_pattern=N countries.")
-    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. exclude_pattern=N leaders.")
-    products: List[str] = Field(default_factory=list, description="List of specified names products/services. exclude_pattern=N products.")
-    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. exclude_pattern=N companies.")
-    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. exclude_pattern=N stock tickers.")    
+    regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. max_length<=10. exclude_pattern=N countries.")
+    people: List[str] = Field(default_factory=list, description="List of specified names of people - CEOs,political leaders,influential figures. max_length<=10. exclude_pattern=N leaders.")
+    products: List[str] = Field(default_factory=list, description="List of specified names products/services. max_length<=10. exclude_pattern=N products.")
+    companies: List[str] = Field(default_factory=list, description="List of specified names companies/organizations. max_length<=10. exclude_pattern=N companies.")
+    stock_tickers: List[str] = Field(default_factory=list, description="List of specified stock ticker symbols. max_length<=10. exclude_pattern=N stock tickers.")    
     
     def model_post_init(self, __context):
         cleanup_fields(self, __context)
@@ -86,7 +86,7 @@ class Digest(Entities):
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         ),
     )
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. Count<=10. exclude_pattern=N tags.")
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.")
     
 
 # ────────────────────────────────────────────────
