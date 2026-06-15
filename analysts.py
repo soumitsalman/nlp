@@ -253,7 +253,8 @@ class VLLMTextAnalyst(TextAnalystBase):
                 max_num_batched_tokens=VLLM_MAX_NUM_BATCHED_TOKENS if VLLM_MAX_NUM_BATCHED_TOKENS > 0 else None,
                 gpu_memory_utilization=VLLM_GPU_MEMORY_UTILIZATION if VLLM_GPU_MEMORY_UTILIZATION > 0 else None,
                 enable_prefix_caching=True,
-                enable_chunked_prefill=True,                
+                enable_chunked_prefill=True,
+                language_model_only=True,             
                 trust_remote_code=True,
                 attention_config={"backend": VLLM_ATTENTION_BACKEND} if VLLM_ATTENTION_BACKEND else None,
             )
