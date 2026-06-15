@@ -241,13 +241,15 @@ class TransformerTextAnalyst(TextAnalystBase):
 
 VLLM_MAX_NUM_BATCHED_TOKENS = int(os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", 16384))
 VLLM_MAX_NUM_SEQS = int(os.getenv("VLLM_MAX_NUM_SEQS", 128))
-VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0.99))
+VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0.95))
+VLLM_ATTENTION_BACKEND=os.getenv("VLLM_ATTENTION_BACKEND")
+
 class VLLMTextAnalyst(TextAnalystBase):
     def __enter__(self):
         if not self._llm:
             from vllm import LLM, SamplingParams
             from vllm.sampling_params import StructuredOutputsParams
-
+            
             self._llm = LLM(
                 model=self.model_name,
                 max_model_len=self.context_len,
@@ -255,9 +257,9 @@ class VLLMTextAnalyst(TextAnalystBase):
                 max_num_batched_tokens=VLLM_MAX_NUM_BATCHED_TOKENS,
                 gpu_memory_utilization=VLLM_GPU_MEMORY_UTILIZATION,
                 enable_prefix_caching=True,
-                enable_chunked_prefill=True,
-                language_model_only=True,
+                enable_chunked_prefill=True,                
                 trust_remote_code=True,
+                attention_config={"backend": VLLM_ATTENTION_BACKEND} if VLLM_ATTENTION_BACKEND else None,
             )
             self.sampling_params = SamplingParams(
                 **self.sampling_params,
