@@ -266,6 +266,15 @@ class VLLMTextAnalyst(TextAnalystBase):
             )
         return self
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._llm:
+            try:
+                engine_core = self._llm.llm_engine.engine_core
+                engine_core.shutdown()
+            except Exception:
+                log.warning("Failed to shutdown vLLM engine cleanly", exc_info=True)
+        return super().__exit__(exc_type, exc_val, exc_tb)
+
     def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
         responses = self._llm.chat(
             [self.create_prompt(msg) for msg in input_messages], 
