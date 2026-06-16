@@ -36,7 +36,6 @@ class TextAnalystBase(ABC):
         output_model: Type[BaseModel],
         enable_thinking: bool,
         max_new_tokens: int,
-        batch_size: int,
         **sampling_params,
     ):
         self.model_name = model_name
@@ -48,7 +47,6 @@ class TextAnalystBase(ABC):
         self.enable_thinking = enable_thinking
         self.max_new_tokens = max_new_tokens
         self.max_prompt_len = context_len - max_new_tokens - TOKEN_MARGIN
-        self.batch_size = batch_size
         self.sampling_params = sampling_params
         self._llm = None
 
@@ -291,7 +289,6 @@ class RemoteTextAnalyst(TextAnalystBase):
         output_model: Type[BaseModel],
         enable_thinking: bool,
         max_new_tokens: int,
-        batch_size: int,
         **sampling_params,
     ):
         super().__init__(
@@ -302,7 +299,6 @@ class RemoteTextAnalyst(TextAnalystBase):
             output_model=output_model,
             enable_thinking=enable_thinking,
             max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
             **sampling_params,
         )
         self.base_url = base_url
@@ -338,7 +334,7 @@ class RemoteTextAnalyst(TextAnalystBase):
         
     def run_batch(self, input_messages: list[str]) -> list[BaseModel]:
         if not self._llm: self.__enter__()
-        with ThreadPoolExecutor(max_workers=self.batch_size) as exec:
+        with ThreadPoolExecutor(max_workers=len(input_messages)) as exec:
             results = list(exec.map(self._run_single, input_messages))
         return results
 
@@ -481,7 +477,6 @@ def create_text_analyst(
     output_model: Type[BaseModel] = Digest, 
     enable_thinking: bool = False, 
     max_new_tokens: int = 2048, 
-    batch_size: int = 32, 
     **kwargs,
 ) -> TextAnalystBase:
     if model_path.startswith(VLLM_PREFIX):
@@ -496,7 +491,6 @@ def create_text_analyst(
             output_model=output_model,
             enable_thinking=enable_thinking,
             max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
             **kwargs,
         )
     elif kwargs.get("base_url") and kwargs.get("api_key"):
@@ -510,7 +504,6 @@ def create_text_analyst(
             output_model=output_model,
             enable_thinking=enable_thinking,
             max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
             **kwargs,
         )
     else:
@@ -524,7 +517,6 @@ def create_text_analyst(
             output_model=output_model, 
             enable_thinking=enable_thinking,
             max_new_tokens=max_new_tokens,
-            batch_size=batch_size,
             **kwargs
         )
 
