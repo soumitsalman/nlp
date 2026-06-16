@@ -606,6 +606,18 @@ def valid_future_outlook(outlook: str):
     if outlook and outlook.lower() not in _UNDETERMINED:
         return outlook
 
+def valid_cross_domain_impacts(impacts: list[str]):
+    if not impacts: return impacts
+
+    unwrap = lambda s: s.strip().removeprefix("<").removesuffix(">")
+    def split_and_unwrap(s: str):
+        if ":" in s: 
+            domain, rest = s.split(":", 1)
+            return f"{_snake(unwrap(domain))}: {unwrap(rest)}"
+        return unwrap(s)
+    return [split_and_unwrap(impact) for impact in impacts if impact]
+    
+
 _CLEANUP_FUNCTIONS = {
     "regions": valid_tags,
     "people": valid_tags,
@@ -615,6 +627,7 @@ _CLEANUP_FUNCTIONS = {
     "tags": valid_tags,
     "stock_tickers": valid_stock_tickers,    
     "macro_context": valid_context_tag,
+    "cross_domain_impacts": valid_cross_domain_impacts,
     "event_type": valid_context_tag,
     "impact_level": valid_impact_or_risk,
     "future_outlook": valid_future_outlook,

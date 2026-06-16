@@ -237,7 +237,7 @@ class TransformerTextAnalyst(TextAnalystBase):
 
 VLLM_MAX_NUM_BATCHED_TOKENS = int(os.getenv("VLLM_MAX_NUM_BATCHED_TOKENS", 0))
 VLLM_MAX_NUM_SEQS = int(os.getenv("VLLM_MAX_NUM_SEQS", 0))
-VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0))
+VLLM_GPU_MEMORY_UTILIZATION = float(os.getenv("VLLM_GPU_MEMORY_UTILIZATION", 0.92))
 VLLM_ATTENTION_BACKEND=os.getenv("VLLM_ATTENTION_BACKEND")
 
 class VLLMTextAnalyst(TextAnalystBase):
@@ -254,14 +254,14 @@ class VLLMTextAnalyst(TextAnalystBase):
                 gpu_memory_utilization=VLLM_GPU_MEMORY_UTILIZATION if VLLM_GPU_MEMORY_UTILIZATION > 0 else None,
                 enable_prefix_caching=True,
                 enable_chunked_prefill=True,
-                language_model_only=True,             
+                # language_model_only=True,             
                 trust_remote_code=True,
                 attention_config={"backend": VLLM_ATTENTION_BACKEND} if VLLM_ATTENTION_BACKEND else None,
             )
             self.sampling_params = SamplingParams(
                 **self.sampling_params,
                 max_tokens=self.max_new_tokens,
-                stop=["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
+                # stop=["}\n", "\n\n", "\t\t", "\n \n", "\n\t\n"],
                 structured_outputs=StructuredOutputsParams(
                     json=self.output_model.model_json_schema()
                 ),
