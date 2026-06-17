@@ -543,29 +543,43 @@ class FinancialDocumentSummary(Digest):
     )
 
 
-class Briefing(Entities):
+class Briefing:
     """Intelligence briefing from a stream of events."""           
     events: list[str] = Field(
         default_factory=list,
         description=(
-            "Chronological sequence of related events. "
-            "Format per item: YYYY-MM-DD Actor verb object/effect/result with metric/context if available. "
-            "Plain sentence. Avoid arrows, labels, angle brackets, or field:value fragments."
+            "List of atomic factual event sentences in chronological order. "
+            "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
+            "Avoid angle brackets, labels, semicolon lists, or field:value fragments."
         )
     )
-    drivers: list[str] = Field(description="Plain causal sentences explaining what drove the sequence. Avoid labels or chain-of-thought.")
-    impacts: list[str] = Field(description="Plain observed impact sentences with affected party and measurable effect where available. Avoid labels or speculation.")
-    impacted_domains: list[str] = Field(description="List of domains impacted by the events sequence.")
-    impact_level: str = Field(description="Overall impact level. ALLOWED: null, low, medium, high, critical, transformative")
-    forecast: str = Field(description="One plain short-term forecast sentence grounded in observed impacts. Avoid hedged narrative or reasoning trace.")
+    drivers: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of atomic causal sentences specifying the action/macro_context driving the events. "
+            "Format per item: plain sentence stating cause and resulting effect. "
+            "Avoid angle brackets, labels, chain-of-thought, or field:value fragments."
+        )
+    )
+    impacts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of atomic observed impact sentences. "
+            "Format per item: affected party verb measurable effect with key metric if available. Plain sentence only. "
+            "Avoid angle brackets, labels, speculation, or field:value fragments."
+        )
+    )
+    impacted_domains: list[str] = Field(default_factory=list, description="List of domains impacted by the events sequence. max_length<=10. exclude_pattern=N domains.")
+    impact_level: str = Field(description="Specified overall impact of the events sequence. ALLOWED: null, low, medium, high, critical, transformative")
+    forecast: str = Field(description="1-sentence specifying short-term forecast grounded in observed impacts or null if not decipherable. Plain sentence only. Avoid hedged narrative, reasoning trace, labels, or field:value fragments.")
     briefing: str = Field(
         description=(
             "Intelligence briefing of the events (<=3sentences). "
-            "Include Time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
+            "Include time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         )
     )
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. exclude_pattern=N tags.")
+    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.")
 
 
 # ────────────────────────────────────────────────
