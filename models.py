@@ -546,7 +546,7 @@ class FinancialDocumentSummary(Digest):
     )
 
 
-class Briefing:
+class Briefing(BaseModel):
     """Intelligence briefing from a stream of events."""           
     events: list[str] = Field(
         default_factory=list,
@@ -559,7 +559,7 @@ class Briefing:
     drivers: list[str] = Field(
         default_factory=list,
         description=(
-            "List of atomic causal sentences specifying the action/macro_context driving the events. max_length<=10. "
+            "List of atomic causal sentences specifying the actions/macro_contexts driving the events. max_length<=10. "
             "Format per item: plain sentence stating cause and resulting effect. "
             "Avoid angle brackets, labels, chain-of-thought, or field:value fragments."
         )
