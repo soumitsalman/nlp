@@ -279,7 +279,7 @@ class VLLMTextAnalyst(TextAnalystBase):
         responses = self._llm.chat(
             [self.create_prompt(msg) for msg in input_messages], 
             sampling_params=self.sampling_params,             
-            chat_template_kwargs={"enable_thinking": self.enable_thinking} if self.enable_thinking else None,
+            chat_template_kwargs={"enable_thinking": self.enable_thinking},
             tokenization_kwargs={"truncate_prompt_tokens": self.max_prompt_len},
             use_tqdm=False, 
         )
