@@ -5,6 +5,46 @@ import re
 import textcase
 from pydantic import BaseModel, Field
 
+_TAG_MAX_LEN = 40
+_TAGS_MAX_COUNT = 10
+_TICKER_MAX_LEN = 6
+
+_DIGEST_ACTIONS_MAX_COUNT = 10
+_DIGEST_CROSS_DOMAIN_IMPACTS_MAX_COUNT = 5
+
+_DIGEST_EVENT_TYPE_MAX_LEN = 40
+_DIGEST_IMPACT_LEVEL_MAX_LEN = 15
+_DIGEST_MACRO_CONTEXT_MAX_LEN = 50
+_DIGEST_FUTURE_OUTLOOK_MAX_LEN = 300
+_DIGEST_BRIEFING_MAX_LEN = 1000
+
+_TAG_LIST_ITEM_MAX_LEN = {
+    "regions": _TAG_MAX_LEN,
+    "people": _TAG_MAX_LEN,
+    "products": _TAG_MAX_LEN,
+    "companies": _TAG_MAX_LEN,
+    "entities": _TAG_MAX_LEN,
+    "tags": _TAG_MAX_LEN,
+    "impacted_domains": _TAG_MAX_LEN,
+}
+
+_DIGEST_LIST_ITEM_MAX_LEN = {
+    **_TAG_LIST_ITEM_MAX_LEN,
+    "stock_tickers": _TICKER_MAX_LEN,
+}
+
+
+def _apply_model_json_constraints(schema: dict, list_item_max_len: dict[str, int]) -> dict:
+    for name, definition in schema["properties"].items():
+        if "anyOf" in definition:
+            definition["type"] = "string"
+            del definition["anyOf"]
+        if item_max := list_item_max_len.get(name):
+            items = definition.setdefault("items", {"type": "string"})
+            items["maxLength"] = item_max
+    return schema
+
+
 class Entities(BaseModel):
     # keywords
     regions: List[str] = Field(default_factory=list, description="List of specified names geographic regions/locations. max_length<=10. exclude_pattern=N countries.")
@@ -43,9 +83,10 @@ class Entities(BaseModel):
 
 
 class Digest(Entities):
-    """Main digest/key points of an article/news/blog/report"""    
+    """Main digest/key points of an article/news/blog/report"""        
     actions: List[str] = Field(
         default_factory=list,
+        max_length=_DIGEST_ACTIONS_MAX_COUNT,
         description=(
             "List of atomic factual event/datapoint sentences. max_length<=10. "
             "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
@@ -60,9 +101,14 @@ class Digest(Entities):
     # "earnings_beat, stock_reaction, analyst_upgrade, sector_rotation, sec_filing_update\n"
     # "route_disruption, freight_rate_spike, aircraft_order, supply_chain_bottleneck, cyber_incident_on_cargo\n"
     # "oil_price_shock, gdp_forecast_revision, inflation_spike, rate_cut_signal, commodity_demand_shift\n"
-    event_type: Optional[str] = Field(None, description="Primary aggregated event type(<=3words) or null if not decipherable. ")
+    event_type: Optional[str] = Field(
+        None,
+        max_length=_DIGEST_EVENT_TYPE_MAX_LEN,
+        description="Primary aggregated event type(<=3words) or null if not decipherable. ",
+    )
     impact_level: Optional[str] = Field(
         None,
+        max_length=_DIGEST_IMPACT_LEVEL_MAX_LEN,
         description="Specified impact of the events on primary domain/context. "
         "ALLOWED: null, low, medium, high, critical, transformative",
     )
@@ -73,24 +119,70 @@ class Digest(Entities):
     # "- Startups: Emerging companies facing funding challenges\n"
     cross_domain_impacts: List[str] = Field(
         default_factory=list,
+        max_length=_DIGEST_CROSS_DOMAIN_IMPACTS_MAX_COUNT,
         description=(
             "List of secondary domains and associated impacts. max_length<=5. "
             "Format per item: DOMAIN: 1-sentence impact. Avoid angle brackets."
         )
     )
     # "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."     
-    macro_context: str = Field(..., description="Primary geopolitical,trade,economic or technological context driving the events(<=4words) or null if not decipherable. ")
-    future_outlook: Optional[str] = Field(default=None, description="1-sentence specifying future outlook/trajectory or null if not specified. ")
+    macro_context: str = Field(
+        ...,
+        max_length=_DIGEST_MACRO_CONTEXT_MAX_LEN,
+        description="Primary geopolitical,trade,economic or technological context driving the events(<=4words) or null if not decipherable. ",
+    )
+    future_outlook: Optional[str] = Field(
+        default=None,
+        max_length=_DIGEST_FUTURE_OUTLOOK_MAX_LEN,
+        description="1-sentence specifying future outlook/trajectory or null if not specified. ",
+    )
     briefing: str = Field(
         ...,
+        max_length=_DIGEST_BRIEFING_MAX_LEN,
         description=(
             "Intelligence briefing of the events (<=2sentences). "
             "Include time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         ),
     )
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.")
-    
+    tags: List[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.",
+    )
+    regions: List[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of specified names geographic regions/locations. max_length<=10. exclude_pattern=N countries.",
+    )
+    people: List[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of specified names of people - CEOs,political leaders,influential figures. max_length<=10. exclude_pattern=N leaders.",
+    )
+    products: List[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of specified names products/services. max_length<=10. exclude_pattern=N products.",
+    )
+    companies: List[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of specified names companies/organizations. max_length<=10. exclude_pattern=N companies.",
+    )
+    stock_tickers: List[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of specified stock ticker symbols. max_length<=10. exclude_pattern=N stock tickers.",
+    )
+
+    @classmethod
+    def model_json_schema(cls):
+        return _apply_model_json_constraints(
+            super().model_json_schema(),
+            _DIGEST_LIST_ITEM_MAX_LEN,
+        )
+
 
 # ────────────────────────────────────────────────
 # Domain-specific models (inherit from base)
@@ -546,10 +638,23 @@ class FinancialDocumentSummary(Digest):
     )
 
 
+_BRIEFING_EVENTS_MAX_COUNT = 40
+_BRIEFING_LIST_MAX_COUNT = 10
+
+_BRIEFING_IMPACT_LEVEL_MAX_LEN = 15
+_BRIEFING_FORECAST_MAX_LEN = 300
+_BRIEFING_BRIEFING_MAX_LEN = 1000
+
+_BRIEFING_LIST_ITEM_MAX_LEN = {
+    k: _TAG_LIST_ITEM_MAX_LEN[k] for k in ("impacted_domains", "tags")
+}
+
+
 class Briefing(BaseModel):
     """Intelligence briefing from a stream of events."""           
     events: list[str] = Field(
         default_factory=list,
+        max_length=_BRIEFING_EVENTS_MAX_COUNT,
         description=(
             "List of atomic factual event sentences in chronological order. max_length<=40."
             "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
@@ -558,6 +663,7 @@ class Briefing(BaseModel):
     )
     drivers: list[str] = Field(
         default_factory=list,
+        max_length=_BRIEFING_LIST_MAX_COUNT,
         description=(
             "List of atomic causal sentences specifying the actions/macro_contexts driving the events. max_length<=10. "
             "Format per item: plain sentence stating cause and resulting effect. "
@@ -566,23 +672,39 @@ class Briefing(BaseModel):
     )
     impacts: list[str] = Field(
         default_factory=list,
+        max_length=_BRIEFING_LIST_MAX_COUNT,
         description=(
             "List of atomic observed impact sentences. "
             "Format per item: affected party verb measurable effect with key metric if available. Plain sentence only. max_length<=10. "
             "Avoid angle brackets, labels, speculation, or field:value fragments."
         )
     )
-    impacted_domains: list[str] = Field(default_factory=list, description="List of domains impacted by the events sequence. max_length<=10. exclude_pattern=N domains.")
-    impact_level: str = Field(description="Specified overall impact of the events sequence. ALLOWED: null, low, medium, high, critical, transformative")
-    forecast: str = Field(description="1-sentence specifying short-term forecast grounded in observed impacts or null if not decipherable. Plain sentence only. Avoid hedged narrative, reasoning trace, labels, or field:value fragments.")
+    impacted_domains: list[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of domains impacted by the events sequence. max_length<=10. exclude_pattern=N domains.",
+    )
+    impact_level: str = Field(
+        max_length=_BRIEFING_IMPACT_LEVEL_MAX_LEN,
+        description="Specified overall impact of the events sequence. ALLOWED: null, low, medium, high, critical, transformative"
+    )
+    forecast: str = Field(
+        max_length=_BRIEFING_FORECAST_MAX_LEN,
+        description="1-sentence specifying short-term forecast grounded in observed impacts or null if not decipherable. Plain sentence only. Avoid hedged narrative, reasoning trace, labels, or field:value fragments."
+    )
     briefing: str = Field(
+        max_length=_BRIEFING_BRIEFING_MAX_LEN,
         description=(
             "Intelligence briefing of the events (<=3sentences). "
             "Include time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
             "Then explain mechanism/how, impact/why it matters, and effects/response/outlook. "
         )
     )
-    tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.")
+    tags: list[str] = Field(
+        default_factory=list,
+        max_length=_TAGS_MAX_COUNT,
+        description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.",
+    )
 
     def model_post_init(self, __context):
         cleanup_fields(self, __context)
@@ -593,12 +715,10 @@ class Briefing(BaseModel):
 
     @classmethod
     def model_json_schema(cls):
-        schema = super().model_json_schema()
-        for name, definition in schema["properties"].items():
-            if 'anyOf' in definition:
-                definition['type']="string"
-                del definition['anyOf']
-        return schema
+        return _apply_model_json_constraints(
+            super().model_json_schema(),
+            _BRIEFING_LIST_ITEM_MAX_LEN,
+        )
 
     def model_dump(self, **kwargs):
         defaults = {
@@ -617,7 +737,6 @@ class Briefing(BaseModel):
 # ────────────────────────────────────────────────
 
 _UNDETERMINED = {"n/a", "na", "none", "unmentioned", "not mentioned", "unspecified", "undetermined", "not specified", "not found", "null"}
-_MAX_NAME_LEN = 40
 
 _snake = lambda s: re.sub(r'_+', '_', textcase.snake(s)).strip('_')
 
@@ -626,12 +745,11 @@ def cleanup_names(items: list[str]):
     if not items: return items
 
     texts = map(lambda text: re.sub(r"^[\W_]+|[\W_]+$", "", text).strip(), items)
-    texts = filter(lambda tag: tag and len(tag) <= _MAX_NAME_LEN and tag.lower() not in _UNDETERMINED, texts)
+    texts = filter(lambda tag: tag and len(tag) <= _TAG_MAX_LEN and tag.lower() not in _UNDETERMINED, texts)
     return list({item.lower(): item for item in texts}.values())
 
-_MAX_TICKER_LEN = 6
 def valid_stock_tickers(items: list[str]):
-    return list(filter(lambda x: len(x) <= _MAX_TICKER_LEN and x.isupper(), cleanup_names(items)))
+    return list(filter(lambda x: len(x) <= _TICKER_MAX_LEN and x.isupper(), cleanup_names(items)))
 
 _IMPACT_LEVELS = {"low", "medium", "high", "critical", "transformative"}
 def valid_impact_or_risk(val: Optional[str]):
@@ -643,7 +761,7 @@ def valid_tags(items: str|list[str]):
 
 def valid_context_tag(tag: str):
     tag = _snake(tag)
-    if len(tag) <= _MAX_NAME_LEN and tag not in _UNDETERMINED:
+    if len(tag) <= _TAG_MAX_LEN and tag not in _UNDETERMINED:
         return tag
 
 def valid_future_outlook(outlook: str):
