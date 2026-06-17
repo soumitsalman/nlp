@@ -47,7 +47,7 @@ class Digest(Entities):
     actions: List[str] = Field(
         default_factory=list,
         description=(
-            "List of atomic factual event/datapoint sentences. "
+            "List of atomic factual event/datapoint sentences. max_length<=10. "
             "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
             "Avoid angle brackets, labels, semicolon lists, or field:value fragments."
         ),
@@ -73,7 +73,10 @@ class Digest(Entities):
     # "- Startups: Emerging companies facing funding challenges\n"
     cross_domain_impacts: List[str] = Field(
         default_factory=list,
-        description="List of secondary domains and associated impacts. Template= <Domain>: <Impact(1-sentence)>",
+        description=(
+            "List of secondary domains and associated impacts. max_length<=5. "
+            "Format per item: DOMAIN: 1-sentence impact. Avoid angle brackets."
+        )
     )
     # "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."     
     macro_context: str = Field(..., description="Primary geopolitical,trade,economic or technological context driving the events(<=4words) or null if not decipherable. ")
@@ -548,7 +551,7 @@ class Briefing:
     events: list[str] = Field(
         default_factory=list,
         description=(
-            "List of atomic factual event sentences in chronological order. "
+            "List of atomic factual event sentences in chronological order. max_length<=40."
             "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
             "Avoid angle brackets, labels, semicolon lists, or field:value fragments."
         )
@@ -556,7 +559,7 @@ class Briefing:
     drivers: list[str] = Field(
         default_factory=list,
         description=(
-            "List of atomic causal sentences specifying the action/macro_context driving the events. "
+            "List of atomic causal sentences specifying the action/macro_context driving the events. max_length<=10. "
             "Format per item: plain sentence stating cause and resulting effect. "
             "Avoid angle brackets, labels, chain-of-thought, or field:value fragments."
         )
@@ -565,7 +568,7 @@ class Briefing:
         default_factory=list,
         description=(
             "List of atomic observed impact sentences. "
-            "Format per item: affected party verb measurable effect with key metric if available. Plain sentence only. "
+            "Format per item: affected party verb measurable effect with key metric if available. Plain sentence only. max_length<=10. "
             "Avoid angle brackets, labels, speculation, or field:value fragments."
         )
     )
