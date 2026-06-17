@@ -584,6 +584,33 @@ class Briefing(BaseModel):
     )
     tags: List[str] = Field(default_factory=list, description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.")
 
+    def model_post_init(self, __context):
+        cleanup_fields(self, __context)
+
+    @classmethod
+    def model_text_schema(cls):
+        return model_text_schema(cls)
+
+    @classmethod
+    def model_json_schema(cls):
+        schema = super().model_json_schema()
+        for name, definition in schema["properties"].items():
+            if 'anyOf' in definition:
+                definition['type']="string"
+                del definition['anyOf']
+        return schema
+
+    def model_dump(self, **kwargs):
+        defaults = {
+            "exclude_none": True,
+            "exclude_unset": True,
+            "exclude_defaults": True,
+        }
+        kwargs = {**defaults, **kwargs}
+        return super().model_dump(**kwargs)
+
+    def __str__(self):
+        return text_value(self)
 
 # ────────────────────────────────────────────────
 # Post initialization cleanup
