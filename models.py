@@ -103,7 +103,6 @@ class Digest(Entities):
     # "oil_price_shock, gdp_forecast_revision, inflation_spike, rate_cut_signal, commodity_demand_shift\n"
     event_type: Optional[str] = Field(
         None,
-        max_length=_DIGEST_EVENT_TYPE_MAX_LEN,
         description="Primary aggregated event type(<=3words) or null if not decipherable. ",
     )
     impact_level: Optional[str] = Field(
@@ -128,7 +127,6 @@ class Digest(Entities):
     # "Examples: US-Iran conflict, Red Sea disruption, Tariff volatility, Rare earth controls, Arctic shipping rivalry, Africa mineral conflict, Cyber arms race escalation etc."     
     macro_context: str = Field(
         ...,
-        max_length=_DIGEST_MACRO_CONTEXT_MAX_LEN,
         description="Primary geopolitical,trade,economic or technological context driving the events(<=4words) or null if not decipherable. ",
     )
     future_outlook: Optional[str] = Field(
