@@ -47,11 +47,17 @@ def remove_after(text: str, sub: str) -> str:
     return text
 
 def clear_gpu_cache():
-    import torch
+    """Clear GPU memory by running garbage collection and clearing CUDA cache if available."""
     import gc
+    import torch
 
-    """Clear GPU memory by running garbage collection and clearing CUDA cache if available"""
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
+
+def is_cuda_oom(exc: BaseException) -> bool:
+    if "OutOfMemoryError" in type(exc).__name__ or "AcceleratorError" in type(exc).__name__:
+        return True
+    msg = str(exc).lower()
+    return "out of memory" in msg or "cudaerrormemoryallocation" in msg
