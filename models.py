@@ -86,7 +86,6 @@ class Digest(Entities):
     """Main digest/key points of an article/news/blog/report"""        
     actions: List[str] = Field(
         default_factory=list,
-        max_length=_DIGEST_ACTIONS_MAX_COUNT,
         description=(
             "List of atomic factual event/datapoint sentences. max_length<=10. "
             "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
@@ -107,7 +106,6 @@ class Digest(Entities):
     )
     impact_level: Optional[str] = Field(
         None,
-        max_length=_DIGEST_IMPACT_LEVEL_MAX_LEN,
         description="Specified impact of the events on primary domain/context. "
         "ALLOWED: null, low, medium, high, critical, transformative",
     )
@@ -118,7 +116,6 @@ class Digest(Entities):
     # "- Startups: Emerging companies facing funding challenges\n"
     cross_domain_impacts: List[str] = Field(
         default_factory=list,
-        max_length=_DIGEST_CROSS_DOMAIN_IMPACTS_MAX_COUNT,
         description=(
             "List of secondary domains and associated impacts. max_length<=5. "
             "Format per item: DOMAIN: 1-sentence impact. Avoid angle brackets."
@@ -131,12 +128,10 @@ class Digest(Entities):
     )
     future_outlook: Optional[str] = Field(
         default=None,
-        max_length=_DIGEST_FUTURE_OUTLOOK_MAX_LEN,
         description="1-sentence specifying future outlook/trajectory or null if not specified. ",
     )
     briefing: str = Field(
         ...,
-        max_length=_DIGEST_BRIEFING_MAX_LEN,
         description=(
             "Intelligence briefing of the events (<=2sentences). "
             "Include time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
@@ -145,32 +140,26 @@ class Digest(Entities):
     )
     tags: List[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.",
     )
     regions: List[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of specified names geographic regions/locations. max_length<=10. exclude_pattern=N countries.",
     )
     people: List[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of specified names of people - CEOs,political leaders,influential figures. max_length<=10. exclude_pattern=N leaders.",
     )
     products: List[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of specified names products/services. max_length<=10. exclude_pattern=N products.",
     )
     companies: List[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of specified names companies/organizations. max_length<=10. exclude_pattern=N companies.",
     )
     stock_tickers: List[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of specified stock ticker symbols. max_length<=10. exclude_pattern=N stock tickers.",
     )
 
@@ -652,7 +641,6 @@ class Briefing(BaseModel):
     """Intelligence briefing from a stream of events."""           
     events: list[str] = Field(
         default_factory=list,
-        max_length=_BRIEFING_EVENTS_MAX_COUNT,
         description=(
             "List of atomic factual event sentences in chronological order. max_length<=40."
             "Format per item: YYYY-MM-DD Actor verb object/effect with key metric if available. Plain sentence only. "
@@ -661,7 +649,6 @@ class Briefing(BaseModel):
     )
     drivers: list[str] = Field(
         default_factory=list,
-        max_length=_BRIEFING_LIST_MAX_COUNT,
         description=(
             "List of atomic causal sentences specifying the actions/macro_contexts driving the events. max_length<=10. "
             "Format per item: plain sentence stating cause and resulting effect. "
@@ -670,7 +657,6 @@ class Briefing(BaseModel):
     )
     impacts: list[str] = Field(
         default_factory=list,
-        max_length=_BRIEFING_LIST_MAX_COUNT,
         description=(
             "List of atomic observed impact sentences. "
             "Format per item: affected party verb measurable effect with key metric if available. Plain sentence only. max_length<=10. "
@@ -679,19 +665,15 @@ class Briefing(BaseModel):
     )
     impacted_domains: list[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of domains impacted by the events sequence. max_length<=10. exclude_pattern=N domains.",
     )
     impact_level: str = Field(
-        max_length=_BRIEFING_IMPACT_LEVEL_MAX_LEN,
         description="Specified overall impact of the events sequence. ALLOWED: null, low, medium, high, critical, transformative"
     )
     forecast: str = Field(
-        max_length=_BRIEFING_FORECAST_MAX_LEN,
         description="1-sentence specifying short-term forecast grounded in observed impacts or null if not decipherable. Plain sentence only. Avoid hedged narrative, reasoning trace, labels, or field:value fragments."
     )
     briefing: str = Field(
-        max_length=_BRIEFING_BRIEFING_MAX_LEN,
         description=(
             "Intelligence briefing of the events (<=3sentences). "
             "Include time/date, larger context, actors, events, targets/affected parties, with key metrics/comparisons. "
@@ -700,7 +682,6 @@ class Briefing(BaseModel):
     )
     tags: list[str] = Field(
         default_factory=list,
-        max_length=_TAGS_MAX_COUNT,
         description="List of search,classification,clustering keywords/phrases. max_length<=10. exclude_pattern=N tags.",
     )
 
