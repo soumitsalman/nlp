@@ -44,6 +44,11 @@ def _apply_model_json_constraints(schema: dict, list_item_max_len: dict[str, int
             items["maxLength"] = item_max
     return schema
 
+_MODEL_DUMP_DEFAULTS = {
+    "exclude_none": True,
+    "exclude_unset": True,
+    "exclude_defaults": True,
+}
 
 class Entities(BaseModel):
     # keywords
@@ -70,13 +75,7 @@ class Entities(BaseModel):
         return schema
 
     def model_dump(self, **kwargs):
-        defaults = {
-            "exclude_none": True,
-            "exclude_unset": True,
-            "exclude_defaults": True,
-        }
-        kwargs = {**defaults, **kwargs}
-        return super().model_dump(**kwargs)
+        return super().model_dump(**(_MODEL_DUMP_DEFAULTS | kwargs))
 
     def __str__(self):
         return text_value(self)
@@ -169,6 +168,9 @@ class Digest(Entities):
             super().model_json_schema(),
             _DIGEST_LIST_ITEM_MAX_LEN,
         )
+
+    def model_dump(self, **kwargs):
+        return super().model_dump(**(_MODEL_DUMP_DEFAULTS | kwargs))
 
 
 # ────────────────────────────────────────────────
@@ -700,13 +702,7 @@ class Briefing(BaseModel):
         )
 
     def model_dump(self, **kwargs):
-        defaults = {
-            "exclude_none": True,
-            "exclude_unset": True,
-            "exclude_defaults": True,
-        }
-        kwargs = {**defaults, **kwargs}
-        return super().model_dump(**kwargs)
+        return super().model_dump(**(_MODEL_DUMP_DEFAULTS | kwargs))
 
     def __str__(self):
         return text_value(self)
