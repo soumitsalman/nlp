@@ -1,4 +1,14 @@
-# NLP — Embeddings & Micro-Agents
+# NLP — Embeddings & Micro-Agents (archived)
+
+**This repository is archived.** Development has moved to the [pycoffeemaker](https://github.com/soumitsalman/pycoffeemaker) monorepo.
+
+| What | Where |
+|------|-------|
+| Source code | [`nlp/`](https://github.com/soumitsalman/pycoffeemaker/tree/main/nlp) |
+| Package docs | [`nlp/README.md`](https://github.com/soumitsalman/pycoffeemaker/blob/main/nlp/README.md) |
+| Issues & contributions | [pycoffeemaker](https://github.com/soumitsalman/pycoffeemaker) |
+
+Do not open PRs or issues here — use the monorepo.
 
 Lightweight NLP utilities for [Pycoffeemaker](../README.md):
 
